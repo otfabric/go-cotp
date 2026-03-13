@@ -1,0 +1,32 @@
+# Binaries
+/go-cotp
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test / build
+*.test
+*.out
+
+# Coverage
+coverage.out
+coverage.txt
+coverage.html
+
+# Vendor
+/vendor/
+
+# Go workspace (local)
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
