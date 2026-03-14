@@ -107,6 +107,7 @@ The otfabric stack is:
 ## Documentation
 
 - [API.md](API.md) — Public API reference: functions, structs, constants, and errors.
+- [RELEASE.md](RELEASE.md) — Release notes (v0.1.0 initial release).
 - [CONTRIBUTING.md](CONTRIBUTING.md) — How to contribute, run tests, and submit changes.
 - [LICENSE](LICENSE) — MIT.
 - [SECURITY.md](SECURITY.md) — How to report security issues.

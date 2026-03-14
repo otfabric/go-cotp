@@ -79,6 +79,10 @@ Lightweight helpers for protocol classification. They do not fully decode; they 
 |----------|-----------|-------------|
 | `LooksLikeCR` | `LooksLikeCR(b []byte) bool` | True if valid LI, enough length, type 0xE0..0xEF. |
 | `LooksLikeCC` | `LooksLikeCC(b []byte) bool` | True if valid LI, enough length, type 0xD0..0xDF. |
+| `LooksLikeDT` | `LooksLikeDT(b []byte) bool` | True if valid LI, enough length, type 0xF0..0xFF. |
+| `LooksLikeDR` | `LooksLikeDR(b []byte) bool` | True if valid LI, enough length, type 0x80. |
+| `LooksLikeDC` | `LooksLikeDC(b []byte) bool` | True if valid LI, enough length, type 0xC0. |
+| `LooksLikeER` | `LooksLikeER(b []byte) bool` | True if valid LI, enough length, type 0x70. |
 | `LooksLikeED` | `LooksLikeED(b []byte) bool` | True if valid LI, enough length, type 0x10. |
 | `LooksLikeAK` | `LooksLikeAK(b []byte) bool` | True if valid LI, enough length, type 0x60..0x6F. |
 | `LooksLikeEA` | `LooksLikeEA(b []byte) bool` | True if valid LI, enough length, type 0x20. |

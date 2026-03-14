@@ -31,6 +31,66 @@ func LooksLikeCC(b []byte) bool {
 	return b[1]&0xF0 == 0xD0
 }
 
+// LooksLikeDR returns true if b appears to be a DR TPDU (classification only: valid LI, buffer length, type 0x80).
+func LooksLikeDR(b []byte) bool {
+	if len(b) < MinHeaderLength {
+		return false
+	}
+	li, err := ReadLI(b)
+	if err != nil {
+		return false
+	}
+	if len(b) < 1+int(li) {
+		return false
+	}
+	return b[1] == 0x80
+}
+
+// LooksLikeDC returns true if b appears to be a DC TPDU (classification only: valid LI, buffer length, type 0xC0).
+func LooksLikeDC(b []byte) bool {
+	if len(b) < MinHeaderLength {
+		return false
+	}
+	li, err := ReadLI(b)
+	if err != nil {
+		return false
+	}
+	if len(b) < 1+int(li) {
+		return false
+	}
+	return b[1] == 0xC0
+}
+
+// LooksLikeDT returns true if b appears to be a DT TPDU (classification only: valid LI, buffer length, type 0xF0..0xFF).
+func LooksLikeDT(b []byte) bool {
+	if len(b) < MinHeaderLength {
+		return false
+	}
+	li, err := ReadLI(b)
+	if err != nil {
+		return false
+	}
+	if len(b) < 1+int(li) {
+		return false
+	}
+	return b[1]&0xF0 == 0xF0
+}
+
+// LooksLikeER returns true if b appears to be an ER TPDU (classification only: valid LI, buffer length, type 0x70).
+func LooksLikeER(b []byte) bool {
+	if len(b) < MinHeaderLength {
+		return false
+	}
+	li, err := ReadLI(b)
+	if err != nil {
+		return false
+	}
+	if len(b) < 1+int(li) {
+		return false
+	}
+	return b[1] == 0x70
+}
+
 // IsConnectionOriented returns true if b appears to be a connection-related TPDU (CR, CC, DR, or DC).
 // It uses PeekType after validating LI; no full decode.
 func IsConnectionOriented(b []byte) bool {

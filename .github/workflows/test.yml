@@ -2,9 +2,8 @@ name: Test
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
 
 permissions:
   contents: read
@@ -12,7 +11,6 @@ permissions:
 
 jobs:
   test:
-    name: Test (Go ${{ matrix.go-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -21,44 +19,58 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Setup Go
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
 
       - name: Verify module
-        run: go mod tidy && git diff --exit-code go.mod go.sum
+        run: go mod tidy && git diff --exit-code
 
       - name: Vet
-        run: go vet .
+        run: go vet ./...
 
       - name: Test
-        run: go test -v -count=1 .
+        run: go test ./...
 
-      - name: Test (race)
-        run: go test -race -count=1 .
+      - name: Race test
+        run: go test -race ./...
 
       - name: Coverage
         if: matrix.go-version == '1.22'
         run: |
-          go test -coverprofile=coverage.out .
+          go test -coverprofile=coverage.out ./...
           go tool cover -func=coverage.out | tee coverage.txt
+          go tool cover -html=coverage.out -o coverage.html
 
-      - name: Coverage summary
+      - name: Add coverage summary
         if: matrix.go-version == '1.22'
         run: |
-          echo "## Coverage" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "## Coverage Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
           cat coverage.txt >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload coverage artifact
+      - name: Upload coverage artifacts
         if: matrix.go-version == '1.22'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: coverage
+          name: coverage-go-${{ matrix.go-version }}
           path: |
             coverage.out
             coverage.txt
+            coverage.html
+
+      - name: Upload coverage to Codecov
+        if: matrix.go-version == '1.22'
+        uses: codecov/codecov-action@v5
+        with:
+          use_oidc: true
+          files: coverage.out
+          flags: unittests
+          name: go-cotp
+          fail_ci_if_error: true
+          verbose: true
