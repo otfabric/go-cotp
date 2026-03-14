@@ -12,7 +12,7 @@ func (e *ED) MarshalBinary() ([]byte, error) {
 		return nil, fmt.Errorf("marshal ED: %w", ErrNilReceiver)
 	}
 	if e.DestinationRef == nil || e.TPDUNR == nil {
-		return nil, fmt.Errorf("marshal ED: DestinationRef and TPDUNR required: %w", ErrTooShort)
+		return nil, fmt.Errorf("marshal ED: DestinationRef and TPDUNR required: %w", ErrMissingRequiredField)
 	}
 	userData := e.UserData
 	if userData == nil {

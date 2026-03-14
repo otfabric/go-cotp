@@ -1,5 +1,28 @@
 # go-cotp Releases
 
+## v0.1.2
+
+Documentation and API alignment: detection parity, error semantics, and doc fixes.
+
+### Changes
+
+- **Detection helpers**
+  - Added `LooksLikeDT`, `LooksLikeDR`, `LooksLikeDC`, `LooksLikeER` so every `Decode*` has a matching `LooksLike*` (full parity with the 10 TPDU types).
+  - Tests added for all four in `detect_test.go`.
+
+- **Error semantics**
+  - ED `MarshalBinary`: when `DestinationRef` or `TPDUNR` is nil, now returns `ErrMissingRequiredField` instead of `ErrTooShort`. Aligns with documented sentinel and makes classification consistent.
+  - New test `TestED_MarshalBinary_MissingRequiredFields` for this path.
+
+- **Documentation**
+  - **API.md:** Clarified that all 10 standard TPDU types are supported; `ErrUnsupportedTPDU` is used only for reserved or unknown type codes.
+  - **API.md:** Normalized ER struct field alignment in the reference.
+  - Detection table in API.md lists all 10 `LooksLike*` helpers in Decode order.
+
+No breaking changes. Import path remains `github.com/otfabric/go-cotp` (package at repo root).
+
+---
+
 ## v0.1.0
 
 Initial public release of `github.com/otfabric/go-cotp`, a small, idiomatic Go library that implements X.224 / COTP (Connection-Oriented Transport Protocol) TPDU parsing and encoding for use over RFC 1006 (TPKT).

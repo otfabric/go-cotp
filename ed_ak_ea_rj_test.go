@@ -257,6 +257,21 @@ func TestED_MarshalBinary_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestED_MarshalBinary_MissingRequiredFields(t *testing.T) {
+	// Nil DestinationRef or TPDUNR must return ErrMissingRequiredField.
+	ed := &ED{UserData: []byte{0x01}}
+	_, err := ed.MarshalBinary()
+	if err == nil || !errors.Is(err, ErrMissingRequiredField) {
+		t.Errorf("nil required fields: got %v, want ErrMissingRequiredField", err)
+	}
+	dst := uint16(0)
+	ed = &ED{DestinationRef: &dst, UserData: []byte{0x01}}
+	_, err = ed.MarshalBinary()
+	if err == nil || !errors.Is(err, ErrMissingRequiredField) {
+		t.Errorf("nil TPDUNR: got %v, want ErrMissingRequiredField", err)
+	}
+}
+
 func TestED_MarshalBinary_UserDataRange(t *testing.T) {
 	dst := uint16(0)
 	nr := uint8(0)

@@ -231,8 +231,8 @@ type DC struct {
 ```go
 type ER struct {
     DestinationRef uint16
-    RejectCause   uint8
-    Parameters    []Parameter
+    RejectCause    uint8
+    Parameters     []Parameter
 }
 ```
 
@@ -307,7 +307,7 @@ No variable part per X.224.
 
 ## Errors
 
-Sentinel errors for classification with `errors.Is`. Decode/encode functions wrap them with context (e.g. `"decode CR: %w"`).
+Sentinel errors for classification with `errors.Is`. Decode/encode functions wrap them with context (e.g. `"decode CR: %w"`). All 10 standard TPDU types (CR, CC, DT, DR, DC, ER, ED, AK, EA, RJ) are supported; `ErrUnsupportedTPDU` is used for reserved or unknown type codes only.
 
 | Variable | Description |
 |----------|-------------|
