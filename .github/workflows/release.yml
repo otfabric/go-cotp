@@ -33,6 +33,9 @@ concurrency:
 permissions:
   contents: write
 
+env:
+  GOPRIVATE: github.com/otfabric/*
+
 jobs:
   release:
     name: release
@@ -62,6 +65,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Auth for private otfabric modules
+        run: git config --global url."https://x-access-token:${{ secrets.OTFABRIC_READ_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
       - name: Test
         run: |

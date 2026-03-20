@@ -11,6 +11,9 @@ permissions:
   contents: read
   id-token: write
 
+env:
+  GOPRIVATE: github.com/otfabric/*
+
 jobs:
   ci:
     name: Lint, Vet & Test (Go ${{ matrix.go-version }})
@@ -30,6 +33,9 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
+
+      - name: Auth for private otfabric modules
+        run: git config --global url."https://x-access-token:${{ secrets.OTFABRIC_READ_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
       - name: Verify module
         run: go mod tidy && git diff --exit-code
