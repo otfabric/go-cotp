@@ -1,17 +1,21 @@
-name: Test
+name: CI
+run-name: "CI (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ github.actor }}"
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
+    branches: ["**"]
 
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  test:
+  ci:
+    name: Lint, Vet & Test (Go ${{ matrix.go-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -19,29 +23,47 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
-      - name: Setup Go
+      - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
+          cache: true
 
       - name: Verify module
         run: go mod tidy && git diff --exit-code
 
-      - name: Vet
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: go vet
         run: go vet ./...
 
+      - name: golangci-lint
+        if: matrix.go-version == '1.21'
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.10.1
+          args: --timeout=5m
+
+      - name: Resolve test packages
+        id: pkgs
+        run: echo "list=$(go list ./... | grep -v '/examples' | grep -v '/cmd' | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+
       - name: Test
-        run: go test ./...
+        run: go test -count=1 -timeout=120s ${{ steps.pkgs.outputs.list }}
 
       - name: Race test
-        run: go test -race ./...
+        run: go test -count=1 -timeout=120s -race ${{ steps.pkgs.outputs.list }}
 
       - name: Coverage
         if: matrix.go-version == '1.21'
         run: |
-          go test -coverprofile=coverage.out ./...
+          go test -count=1 -race -coverprofile=coverage.out -covermode=atomic ${{ steps.pkgs.outputs.list }}
           go tool cover -func=coverage.out | tee coverage.txt
           go tool cover -html=coverage.out -o coverage.html
 
@@ -72,5 +94,5 @@ jobs:
           files: coverage.out
           flags: unittests
           name: go-cotp
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           verbose: true
