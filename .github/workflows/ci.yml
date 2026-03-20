@@ -7,6 +7,10 @@ on:
   pull_request:
     branches: ["**"]
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   ci:
     uses: otfabric/.github/.github/workflows/go-ci.yml@v1
