@@ -4,7 +4,7 @@ Thank you for your interest in contributing. This document explains how to get s
 
 ## Development setup
 
-- **Go**: 1.22 or later.
+- **Go**: 1.21 or later.
 
 ```sh
 git clone https://github.com/otfabric/go-cotp.git

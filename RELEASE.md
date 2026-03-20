@@ -1,5 +1,13 @@
 # go-cotp Releases
 
+## v0.1.3
+
+**Changed**: Lowered minimum required Go version to 1.21 (was 1.22). All documentation, CI, and go.mod references updated accordingly. No code changes.
+
+This release ensures compatibility with Go 1.21. No new features or bugfixes are included.
+
+---
+
 ## v0.1.2
 
 Documentation and API alignment: detection parity, error semantics, and doc fixes.
@@ -53,11 +61,11 @@ Initial public release of `github.com/otfabric/go-cotp`, a small, idiomatic Go l
   - `RELEASE.md` — release notes.
   - `CONTRIBUTING.md`, `LICENSE` (MIT), `SECURITY.md`.
   - `Makefile` with `test`, `vet`, `fmt`, `coverage`, `coverage-check` (min 75%), `fuzz`, `bench`, `check`.
-  - GitHub Actions workflow (`.github/workflows/test.yml`) for tests, race detector, and coverage on Go 1.22+.
+  - GitHub Actions workflow (`.github/workflows/test.yml`) for tests, race detector, and coverage on Go 1.21+.
 
 ### Dependencies
 
-- **Go:** 1.22 or later.
+- **Go:** 1.21 or later.
 - **go-tpkt:** `github.com/otfabric/go-tpkt` — used for examples and integration; COTP payloads are typically obtained from `tpkt.Decode` or `tpkt.Reader.ReadFrame`.
 
 ### Integration

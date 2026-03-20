@@ -1,9 +1,9 @@
 # go-cotp
 
-[![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Go](https://img.shields.io/badge/Go-1.21%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/otfabric/go-cotp)](https://goreportcard.com/report/github.com/otfabric/go-cotp)
-[![CI](https://github.com/otfabric/go-cotp/actions/workflows/test.yml/badge.svg)](https://github.com/otfabric/go-cotp/actions/workflows/test.yml)
+[![CI](https://github.com/otfabric/go-cotp/actions/workflows/ci.yml/badge.svg)](https://github.com/otfabric/go-cotp/actions/workflows/ci.yml)
 [![Codecov](https://codecov.io/github.com/otfabric/go-cotp/graph/badge.svg)](https://app.codecov.io/github.com/otfabric/go-cotp)
 [![Release](https://img.shields.io/github/v/release/otfabric/go-cotp?label=release)](https://github.com/otfabric/go-cotp/releases)
 
@@ -17,7 +17,7 @@ This library is part of the **otfabric** OT protocol stack. It implements the Co
 go get github.com/otfabric/go-cotp
 ```
 
-**Requires:** Go 1.22+
+**Requires:** Go 1.21+
 
 The package lives at repo root so the import path is `github.com/otfabric/go-cotp` (same style as `github.com/otfabric/go-tpkt`). Package name is `cotp`.
 

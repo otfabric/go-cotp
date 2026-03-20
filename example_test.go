@@ -64,7 +64,7 @@ func ExampleExtractUserData() {
 		fmt.Println("ExtractUserData:", err)
 		return
 	}
-	fmt.Println("userdata:", userData)
+	fmt.Printf("userdata: %v\n", userData)
 	// Output: userdata: [222 173]
 }
 
