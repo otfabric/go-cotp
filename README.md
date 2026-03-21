@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/otfabric/go-cotp)](https://goreportcard.com/report/github.com/otfabric/go-cotp)
 [![CI](https://github.com/otfabric/go-cotp/actions/workflows/ci.yml/badge.svg)](https://github.com/otfabric/go-cotp/actions/workflows/ci.yml)
-[![Codecov](https://codecov.io/github.com/otfabric/go-cotp/graph/badge.svg)](https://app.codecov.io/github.com/otfabric/go-cotp)
+[![Codecov](https://codecov.io/github/otfabric/go-cotp/graph/badge.svg?token=e3F6pwSoGB)](https://codecov.io/github/otfabric/go-cotp)
 [![Release](https://img.shields.io/github/v/release/otfabric/go-cotp?label=release)](https://github.com/otfabric/go-cotp/releases)
 
 X.224 / COTP TPDU encode/decode for Go, for use over RFC 1006 (TPKT).
