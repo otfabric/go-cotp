@@ -1,5 +1,13 @@
 # go-cotp Releases
 
+## v0.1.4
+
+**Changed**: Increased minimum required Go version to 1.23 (was 1.21). All documentation, CI, and go.mod references updated accordingly. No code changes.
+
+This release ensures compatibility with Go 1.23. No new features or bugfixes are included.
+
+---
+
 ## v0.1.3
 
 **Changed**: Lowered minimum required Go version to 1.21 (was 1.22). All documentation, CI, and go.mod references updated accordingly. No code changes.
