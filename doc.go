@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package cotp implements X.224 / COTP (Connection-Oriented Transport Protocol)
 // TPDU parsing and encoding for use over RFC 1006 (TPKT).
 //

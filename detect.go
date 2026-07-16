@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 package cotp
 
 // LooksLikeCR returns true if b appears to be a CR TPDU: valid LI, buffer long enough, and type code 0xE0..0xEF.

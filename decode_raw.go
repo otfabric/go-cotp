@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 package cotp
 
 // DecodeWithRaw is like Decode but on success sets Decoded.Raw to the exact input slice b.
