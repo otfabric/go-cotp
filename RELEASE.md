@@ -1,5 +1,25 @@
 # go-cotp Releases
 
+## v0.1.5
+
+Open-source release preparation: MIT license headers, README improvements, and dependency bump. No API or behavior changes.
+
+### Changes
+
+- **License**
+  - Added `// SPDX-License-Identifier: MIT` to all first-party Go source files.
+
+- **Documentation**
+  - **README.md:** Added table of contents and a dedicated License section.
+  - **README.md:** Normalized badge block for public release — added pkg.go.dev badge, reordered badges, and switched Codecov to the tokenless public URL (`codecov.io/gh/...`).
+
+- **Dependencies**
+  - Bumped `github.com/otfabric/go-tpkt` from v0.1.2 to v0.1.3.
+
+No breaking changes. Import path remains `github.com/otfabric/go-cotp`.
+
+---
+
 ## v0.1.4
 
 **Changed**: Increased minimum required Go version to 1.23 (was 1.21). All documentation, CI, and go.mod references updated accordingly. No code changes.

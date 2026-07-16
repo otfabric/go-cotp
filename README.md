@@ -1,15 +1,28 @@
 # go-cotp
 
 [![Go](https://img.shields.io/badge/Go-1.23%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Go Reference](https://pkg.go.dev/badge/github.com/otfabric/go-cotp.svg)](https://pkg.go.dev/github.com/otfabric/go-cotp)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/otfabric/go-cotp)](https://goreportcard.com/report/github.com/otfabric/go-cotp)
 [![CI](https://github.com/otfabric/go-cotp/actions/workflows/ci.yml/badge.svg)](https://github.com/otfabric/go-cotp/actions/workflows/ci.yml)
-[![Codecov](https://codecov.io/github/otfabric/go-cotp/graph/badge.svg?token=e3F6pwSoGB)](https://codecov.io/github/otfabric/go-cotp)
+[![Codecov](https://codecov.io/gh/otfabric/go-cotp/graph/badge.svg)](https://codecov.io/gh/otfabric/go-cotp)
 [![Release](https://img.shields.io/github/v/release/otfabric/go-cotp?label=release)](https://github.com/otfabric/go-cotp/releases)
 
 X.224 / COTP TPDU encode/decode for Go, for use over RFC 1006 (TPKT).
 
-This library is part of the **otfabric** OT protocol stack. It implements the Connection-Oriented Transport Protocol (COTP) layer above [go-tpkt](https://github.com/otfabric/go-tpkt) and below application protocols such as [go-s7comm](https://github.com/otfabric/go-s7comm) and go-mms.
+This library is part of the **otfabric** OT protocol stack. It implements the Connection-Oriented Transport Protocol (COTP) layer above [go-tpkt](https://github.com/otfabric/go-tpkt) and below application protocols such as [go-s7comm](https://github.com/otfabric/go-s7comm) and [go-mms](https://github.com/otfabric/go-mms).
+
+## Table of contents
+
+- [Install](#install)
+- [Scope](#scope)
+- [Usage](#usage)
+  - [Decoding a TPDU](#decoding-a-tpdu)
+  - [Extracting DT user data](#extracting-dt-user-data)
+  - [Building and sending](#building-and-sending)
+- [Integration](#integration)
+- [Documentation](#documentation)
+  - [Test data and captures](#test-data-and-captures)
+- [License](#license)
 
 ## Install
 
@@ -118,3 +131,7 @@ Runnable examples (decode and encode with tpkt) live in `example_test.go`; run t
 ### Test data and captures
 
 Committed hex fixtures in **`testdata/unit/`** are used by unit and golden tests. Capture fixtures go in **`testdata/captures/`**; see [testdata/captures/README.md](testdata/captures/README.md) for format and how to add new captures.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](./LICENSE).

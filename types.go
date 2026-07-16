@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 package cotp
 
 // TPDUType is the X.224 TPDU type code (high bits of octet 2).
