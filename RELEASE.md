@@ -1,5 +1,40 @@
 # go-cotp Releases
 
+## v0.1.6
+
+go-tpkt v1.0.0 migration, standards compliance audit, codec P0 correctness fixes, and target stack architecture docs.
+
+### Dependencies
+
+- Migrated to `github.com/otfabric/go-tpkt` **v1.0.0** (removed local `replace`).
+- Examples and docs use the v1 packet API: `EncodePacket` / `DecodePacket`, `ReadPacket` / `WritePacket`, `ReaderConfig`, error-returning constructors.
+
+### Codec (P0)
+
+- **LI vs fixed part (X.224 13.2.2.1):** decoders reject LI shorter than the TPDU fixed part with `ErrInvalidLI` (`headerBounds`).
+- **CR/CC selectors:** encode rejects values longer than 255 octets (`ErrUnexpectedParameterLength`); no silent truncation.
+- **LooksLikeDT / DecodeDT:** type mask aligned with `PeekType` (`0xF0`–`0xF1` only).
+- **CR/CC user data:** exposed as `UserData`, round-tripped on encode; CR total length capped at 128 octets (`MaxCRTPDULength`, `ErrLengthMismatch`).
+- **Duplicate known CR/CC parameters:** follow X.224 13.2.3 last-wins (no longer return `ErrDuplicateKnownParameter`).
+- Added focused tests in `p0_test.go`; policies recorded in `doc.go`.
+
+### Tests
+
+- Expanded TPKT↔COTP integration tests (round-trip, multi-packet boundaries, truncation as framing error, nil constructors, invalid reader config).
+- Strengthened fuzz invariants (`FuzzDecode` zero-value on error; `FuzzLooksLikeDoesNotPanic`; `FuzzMarshalDecodeRoundTrip`).
+
+### Documentation and specs
+
+- Added [docs/COMPLIANCE.md](docs/COMPLIANCE.md): clause-backed matrix against X.214, X.224 (+ Amd.1), RFC 1006, RFC 2126; gap roadmap (P0 marked done); safe compliance claim.
+- Added [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): target OT Fabric service boundaries (TPKT packets → COTP TSDUs → S7/MMS), ownership matrix, dependency rules, and migration sequence.
+- Moved public API reference from `API.md` to [docs/API.md](docs/API.md); updated links in README, CONTRIBUTING, COMPLIANCE, and RELEASE.
+- README scope/integration sections distinguish codec-today vs engine-target and point at ARCHITECTURE + COMPLIANCE; stack diagram uses TPKT **packet** terminology.
+- Reorganized `spec/` (`core/` ITU-T PDFs, `tcp/` RFCs) and expanded [spec/README.md](spec/README.md) with local document links.
+
+Import path remains `github.com/otfabric/go-cotp`.
+
+---
+
 ## v0.1.5
 
 Open-source release preparation: MIT license headers, README improvements, and dependency bump. No API or behavior changes.
@@ -85,7 +120,7 @@ Initial public release of `github.com/otfabric/go-cotp`, a small, idiomatic Go l
 - **Tooling and docs**
   - `doc.go` with package scope, aliasing, and replay behavior.
   - `README.md` with badges, install, usage, integration with go-tpkt, and documentation links.
-  - `API.md` — public API reference (functions, types, errors).
+  - `docs/API.md` — public API reference (functions, types, errors).
   - `RELEASE.md` — release notes.
   - `CONTRIBUTING.md`, `LICENSE` (MIT), `SECURITY.md`.
   - `Makefile` with `test`, `vet`, `fmt`, `coverage`, `coverage-check` (min 75%), `fuzz`, `bench`, `check`.
@@ -94,7 +129,7 @@ Initial public release of `github.com/otfabric/go-cotp`, a small, idiomatic Go l
 ### Dependencies
 
 - **Go:** 1.21 or later.
-- **go-tpkt:** `github.com/otfabric/go-tpkt` — used for examples and integration; COTP payloads are typically obtained from `tpkt.Decode` or `tpkt.Reader.ReadFrame`.
+- **go-tpkt:** `github.com/otfabric/go-tpkt` — used for examples and integration; COTP payloads are typically obtained from `tpkt.DecodePacket` or `tpkt.Reader.ReadPacket`.
 
 ### Integration
 

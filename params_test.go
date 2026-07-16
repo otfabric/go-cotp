@@ -61,9 +61,14 @@ func TestParseCRCCVariablePart(t *testing.T) {
 			},
 		},
 		{
-			name:    "duplicate 0xC1",
+			name:    "duplicate 0xC1 last wins",
 			b:       []byte{0xC1, 1, 0x01, 0xC1, 1, 0x02},
-			wantErr: ErrDuplicateKnownParameter,
+			wantErr: nil,
+			check: func(t *testing.T, r *crccVariableResult) {
+				if len(r.callingSelector) != 1 || r.callingSelector[0] != 0x02 {
+					t.Errorf("callingSelector = %v, want [0x02]", r.callingSelector)
+				}
+			},
 		},
 		{
 			name:    "truncated after code+length",

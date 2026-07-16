@@ -28,7 +28,8 @@ func DecodeDT(b []byte) (*DT, error) {
 	if len(b) < headerLen {
 		return nil, fmt.Errorf("decode DT: header length %d exceeds buffer %d: %w", headerLen, len(b), ErrTooShort)
 	}
-	if b[1]&0xF0 != 0xF0 {
+	// Match PeekType / LooksLikeDT: 1111 000y (ROA in low bit only).
+	if b[1]&0xFE != 0xF0 {
 		return nil, fmt.Errorf("decode DT: not a DT TPDU (code 0x%02x): %w", b[1], ErrInvalidTPDUCode)
 	}
 

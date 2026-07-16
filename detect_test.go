@@ -118,7 +118,8 @@ func TestLooksLikeDT(t *testing.T) {
 		{"short buffer", []byte{0x02, 0xF0}, false},
 		{"bad LI", []byte{0xFF, 0xF0, 0x00}, false},
 		{"type 0xF0 mask", []byte{0x02, 0xF0, 0x00}, true},
-		{"type 0xFF mask", []byte{0x02, 0xFF, 0x00}, true},
+		{"type 0xF1 ROA", []byte{0x02, 0xF1, 0x00}, true},
+		{"type 0xFF not DT", []byte{0x02, 0xFF, 0x00}, false},
 		{"empty", []byte{}, false},
 	}
 	for _, tt := range tests {

@@ -60,8 +60,15 @@ type Parameter struct {
 	Value []byte
 }
 
+// MaxCRTPDULength is the X.224 13.3 maximum length of a CR-TPDU in octets (including LI).
+const MaxCRTPDULength = 128
+
+// MaxParameterValueLength is the maximum length of a parameter value field (one octet length).
+const MaxParameterValueLength = 255
+
 // CR is a Connection Request TPDU (X.224 13.3).
 // Nil selector = absent; non-nil empty slice = present with length 0. TPDUSize nil = parameter absent.
+// UserData is octets after the header (may be empty); may alias decode input. Total CR length ≤ 128.
 type CR struct {
 	CDT             uint8
 	DestinationRef  uint16
@@ -71,10 +78,11 @@ type CR struct {
 	CallingSelector []byte
 	CalledSelector  []byte
 	TPDUSize        *uint8
+	UserData        []byte
 }
 
 // CC is a Connection Confirm TPDU (X.224 13.4).
-// Same nil/empty semantics as CR.
+// Same nil/empty semantics as CR, including UserData after the header.
 type CC struct {
 	CDT             uint8
 	DestinationRef  uint16
@@ -84,6 +92,7 @@ type CC struct {
 	CallingSelector []byte
 	CalledSelector  []byte
 	TPDUSize        *uint8
+	UserData        []byte
 }
 
 // DT is a Data TPDU (X.224 13.7). v1 supports minimal (class 0/1) and normal (class 2–4) formats.

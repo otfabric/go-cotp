@@ -35,6 +35,9 @@ func (c *CR) String() string {
 	if len(c.Parameters) > 0 {
 		s += fmt.Sprintf(" params:%d", len(c.Parameters))
 	}
+	if len(c.UserData) > 0 {
+		s += fmt.Sprintf(" userdata:%d", len(c.UserData))
+	}
 	return s + "}"
 }
 
@@ -55,6 +58,9 @@ func (c *CC) String() string {
 	}
 	if len(c.Parameters) > 0 {
 		s += fmt.Sprintf(" params:%d", len(c.Parameters))
+	}
+	if len(c.UserData) > 0 {
+		s += fmt.Sprintf(" userdata:%d", len(c.UserData))
 	}
 	return s + "}"
 }

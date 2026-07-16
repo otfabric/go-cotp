@@ -19,9 +19,9 @@ func DecodeEA(b []byte) (*EA, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode EA: %w", err)
 	}
-	headerLen := 1 + int(li)
-	if len(b) < headerLen {
-		return nil, fmt.Errorf("decode EA: header length %d exceeds buffer %d: %w", headerLen, len(b), ErrTooShort)
+	headerLen, err := headerBounds(b, li, eaFixedPartLength)
+	if err != nil {
+		return nil, fmt.Errorf("decode EA: %w", err)
 	}
 	if b[1] != 0x20 {
 		return nil, fmt.Errorf("decode EA: not an EA TPDU (code 0x%02x): %w", b[1], ErrInvalidTPDUCode)

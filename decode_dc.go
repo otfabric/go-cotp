@@ -19,9 +19,9 @@ func DecodeDC(b []byte) (*DC, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode DC: %w", err)
 	}
-	headerLen := 1 + int(li)
-	if len(b) < headerLen {
-		return nil, fmt.Errorf("decode DC: header length %d exceeds buffer %d: %w", headerLen, len(b), ErrTooShort)
+	headerLen, err := headerBounds(b, li, dcFixedPartLength)
+	if err != nil {
+		return nil, fmt.Errorf("decode DC: %w", err)
 	}
 	if b[1] != 0xC0 {
 		return nil, fmt.Errorf("decode DC: not a DC TPDU (code 0x%02x): %w", b[1], ErrInvalidTPDUCode)

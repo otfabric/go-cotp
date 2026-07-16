@@ -18,21 +18,37 @@ var (
 	exampleDT = []byte{0x02, 0xF0, 0x00, 0xDE, 0xAD}
 )
 
-// ExampleDecode demonstrates reading a TPKT frame and decoding the COTP TPDU.
-// The payload is obtained with tpkt.Reader.ReadFrame; then cotp.Decode parses it.
+func mustNewReader(r io.Reader) *tpkt.Reader {
+	rd, err := tpkt.NewReader(r, tpkt.ReaderConfig{})
+	if err != nil {
+		panic(err)
+	}
+	return rd
+}
+
+func mustNewWriter(w io.Writer) *tpkt.Writer {
+	wr, err := tpkt.NewWriter(w)
+	if err != nil {
+		panic(err)
+	}
+	return wr
+}
+
+// ExampleDecode demonstrates reading a TPKT packet and decoding the COTP TPDU.
+// The payload is obtained with tpkt.Reader.ReadPacket; then cotp.Decode parses it.
 func ExampleDecode() {
-	// Build a TPKT frame containing a COTP CR (e.g. as if received from the wire).
-	pkt, err := tpkt.Encode(exampleCR)
+	// Build a TPKT packet containing a COTP CR (e.g. as if received from the wire).
+	pkt, err := tpkt.EncodePacket(exampleCR)
 	if err != nil {
 		fmt.Println("encode:", err)
 		return
 	}
 
 	// Simulate reading from a connection: wrap the packet in a reader.
-	r := tpkt.NewReader(bytes.NewReader(pkt))
-	payload, err := r.ReadFrame()
+	r := mustNewReader(bytes.NewReader(pkt))
+	payload, err := r.ReadPacket()
 	if err != nil && err != io.EOF {
-		fmt.Println("ReadFrame:", err)
+		fmt.Println("ReadPacket:", err)
 		return
 	}
 
@@ -57,9 +73,9 @@ func ExampleDecode() {
 
 // ExampleExtractUserData shows how to get DT user data without full decode.
 func ExampleExtractUserData() {
-	pkt, _ := tpkt.Encode(exampleDT)
-	r := tpkt.NewReader(bytes.NewReader(pkt))
-	payload, _ := r.ReadFrame()
+	pkt, _ := tpkt.EncodePacket(exampleDT)
+	r := mustNewReader(bytes.NewReader(pkt))
+	payload, _ := r.ReadPacket()
 
 	userData, err := cotp.ExtractUserData(payload)
 	if err != nil {
@@ -89,8 +105,8 @@ func ExampleDecodeWithRaw() {
 	// Replay same type: true
 }
 
-// ExampleEncode demonstrates building a CR, marshaling it, and writing it as a TPKT frame.
-func ExampleEncode() {
+// ExampleEncode demonstrates building a CR, marshaling it, and writing it as a TPKT packet.
+func Example_writeTPKT() {
 	cr := &cotp.CR{
 		CDT:            0,
 		DestinationRef: 0,
@@ -104,37 +120,36 @@ func ExampleEncode() {
 	}
 
 	var buf bytes.Buffer
-	w := tpkt.NewWriter(&buf)
-	n, err := w.WriteFrame(encoded)
-	if err != nil {
-		fmt.Println("WriteFrame:", err)
+	w := mustNewWriter(&buf)
+	if err := w.WritePacket(encoded); err != nil {
+		fmt.Println("WritePacket:", err)
 		return
 	}
-	fmt.Println("wrote", n, "bytes, frame len", buf.Len())
-	// Output: wrote 11 bytes, frame len 11
+	fmt.Println("wrote packet len", buf.Len())
+	// Output: wrote packet len 11
 }
 
-// TestTpktCotpIntegration verifies that tpkt and cotp work together: write TPKT frames, read them, decode COTP.
+// TestTpktCotpIntegration verifies that tpkt and cotp work together: write TPKT packets, read them, decode COTP.
 func TestTpktCotpIntegration(t *testing.T) {
-	// Build buffer with two TPKT frames: CR and DT.
-	pktCR, err := tpkt.Encode(exampleCR)
+	// Build buffer with two TPKT packets: CR and DT.
+	pktCR, err := tpkt.EncodePacket(exampleCR)
 	if err != nil {
-		t.Fatalf("tpkt.Encode(CR): %v", err)
+		t.Fatalf("tpkt.EncodePacket(CR): %v", err)
 	}
-	pktDT, err := tpkt.Encode(exampleDT)
+	pktDT, err := tpkt.EncodePacket(exampleDT)
 	if err != nil {
-		t.Fatalf("tpkt.Encode(DT): %v", err)
+		t.Fatalf("tpkt.EncodePacket(DT): %v", err)
 	}
 	var buf bytes.Buffer
 	buf.Write(pktCR)
 	buf.Write(pktDT)
 
-	r := tpkt.NewReader(&buf)
+	r := mustNewReader(&buf)
 
-	// First frame: CR
-	payload, err := r.ReadFrame()
+	// First packet: CR
+	payload, err := r.ReadPacket()
 	if err != nil {
-		t.Fatalf("ReadFrame 1: %v", err)
+		t.Fatalf("ReadPacket 1: %v", err)
 	}
 	msg, err := cotp.Decode(payload)
 	if err != nil {
@@ -144,10 +159,10 @@ func TestTpktCotpIntegration(t *testing.T) {
 		t.Errorf("expected CR, got Type=%v CR=%v", msg.Type, msg.CR != nil)
 	}
 
-	// Second frame: DT
-	payload, err = r.ReadFrame()
+	// Second packet: DT
+	payload, err = r.ReadPacket()
 	if err != nil {
-		t.Fatalf("ReadFrame 2: %v", err)
+		t.Fatalf("ReadPacket 2: %v", err)
 	}
 	msg, err = cotp.Decode(payload)
 	if err != nil {

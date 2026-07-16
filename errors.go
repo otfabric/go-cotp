@@ -9,9 +9,9 @@ import "errors"
 var (
 	// ErrTooShort indicates the buffer is shorter than required (e.g. no LI or type code).
 	ErrTooShort = errors.New("cotp: buffer too short")
-	// ErrInvalidLI indicates the length indicator is invalid (e.g. > 254 or inconsistent with buffer).
+	// ErrInvalidLI indicates the length indicator is invalid (e.g. > 254, or shorter than the TPDU fixed part).
 	ErrInvalidLI = errors.New("cotp: invalid length indicator")
-	// ErrLengthMismatch indicates the declared length does not match the actual buffer.
+	// ErrLengthMismatch indicates a TPDU length constraint was violated (e.g. CR exceeds 128 octets).
 	ErrLengthMismatch = errors.New("cotp: length mismatch")
 	// ErrUnknownTPDUType indicates the TPDU type code is not recognized.
 	ErrUnknownTPDUType = errors.New("cotp: unknown TPDU type")
@@ -29,7 +29,8 @@ var (
 	ErrUnsupportedDTVariant = errors.New("cotp: unsupported DT variant")
 	// ErrInvalidClassOption indicates an invalid class/option field.
 	ErrInvalidClassOption = errors.New("cotp: invalid class option")
-	// ErrDuplicateKnownParameter indicates a known parameter code appeared more than once (v1 profile: error).
+	// ErrDuplicateKnownParameter is retained for compatibility. Decode follows X.224 13.2.3
+	// (last duplicate value wins) and no longer returns this error.
 	ErrDuplicateKnownParameter = errors.New("cotp: duplicate known parameter")
 	// ErrInvalidEDUserDataLength indicates ED user data length is not in 1–16 octets (X.224).
 	ErrInvalidEDUserDataLength = errors.New("cotp: invalid ED user data length")

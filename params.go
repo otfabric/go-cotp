@@ -15,11 +15,11 @@ type crccVariableResult struct {
 
 // parseCRCCVariablePart parses the variable part (octets 8..p) of a CR or CC TPDU.
 // Each parameter is code (1), length (1), value (length octets).
-// Duplicate known parameter (0xC1, 0xC2, 0xC0) returns ErrDuplicateKnownParameter.
-// Unknown parameters are appended to the result. Value slices may alias b.
+// Duplicate known parameters (0xC1, 0xC2, 0xC0) follow X.224 13.2.3: the last value wins.
+// Unknown parameters are appended to the result (all occurrences preserved in order).
+// Value slices may alias b.
 func parseCRCCVariablePart(b []byte) (*crccVariableResult, error) {
 	r := &crccVariableResult{}
-	seenKnown := make(map[uint8]bool)
 	pos := 0
 	for pos < len(b) {
 		if pos+2 > len(b) {
@@ -36,22 +36,10 @@ func parseCRCCVariablePart(b []byte) (*crccVariableResult, error) {
 
 		switch code {
 		case ParamCallingSelector:
-			if seenKnown[code] {
-				return nil, fmt.Errorf("variable part: %w", ErrDuplicateKnownParameter)
-			}
-			seenKnown[code] = true
 			r.callingSelector = value
 		case ParamCalledSelector:
-			if seenKnown[code] {
-				return nil, fmt.Errorf("variable part: %w", ErrDuplicateKnownParameter)
-			}
-			seenKnown[code] = true
 			r.calledSelector = value
 		case ParamTPDUSize:
-			if seenKnown[code] {
-				return nil, fmt.Errorf("variable part: %w", ErrDuplicateKnownParameter)
-			}
-			seenKnown[code] = true
 			if length != 1 {
 				return nil, fmt.Errorf("variable part: TPDU size length %d: %w", length, ErrUnexpectedParameterLength)
 			}
@@ -83,4 +71,39 @@ func parseVariablePart(b []byte) ([]Parameter, error) {
 		pos += length
 	}
 	return params, nil
+}
+
+// encodeCRCCVariablePart builds the CR/CC variable part in canonical order
+// (0xC1, 0xC2, 0xC0) then unknown Parameters. Selector and unknown values longer
+// than MaxParameterValueLength are rejected.
+func encodeCRCCVariablePart(calling, called []byte, tpduSize *uint8, params []Parameter, what string) ([]byte, error) {
+	var varPart []byte
+	if calling != nil {
+		if len(calling) > MaxParameterValueLength {
+			return nil, fmt.Errorf("marshal %s: calling selector length %d: %w", what, len(calling), ErrUnexpectedParameterLength)
+		}
+		varPart = append(varPart, ParamCallingSelector, byte(len(calling)))
+		varPart = append(varPart, calling...)
+	}
+	if called != nil {
+		if len(called) > MaxParameterValueLength {
+			return nil, fmt.Errorf("marshal %s: called selector length %d: %w", what, len(called), ErrUnexpectedParameterLength)
+		}
+		varPart = append(varPart, ParamCalledSelector, byte(len(called)))
+		varPart = append(varPart, called...)
+	}
+	if tpduSize != nil {
+		varPart = append(varPart, ParamTPDUSize, 1, *tpduSize)
+	}
+	for _, p := range params {
+		if p.Code == ParamCallingSelector || p.Code == ParamCalledSelector || p.Code == ParamTPDUSize {
+			continue
+		}
+		if len(p.Value) > MaxParameterValueLength {
+			return nil, fmt.Errorf("marshal %s: parameter 0x%02x value length %d: %w", what, p.Code, len(p.Value), ErrUnexpectedParameterLength)
+		}
+		varPart = append(varPart, p.Code, byte(len(p.Value)))
+		varPart = append(varPart, p.Value...)
+	}
+	return varPart, nil
 }

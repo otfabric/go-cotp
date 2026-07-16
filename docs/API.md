@@ -1,6 +1,8 @@
 # go-cotp API reference
 
-Public API of package `github.com/otfabric/go-cotp` (package name: `cotp`). Input to decode is one complete COTP TPDU payload (typically from a TPKT frame). Multi-octet fields use network byte order (big-endian).
+Public API of package `github.com/otfabric/go-cotp` (package name: `cotp`). Input to decode is one complete COTP TPDU payload (typically from a TPKT packet via [go-tpkt](https://github.com/otfabric/go-tpkt) v1). Multi-octet fields use network byte order (big-endian).
+
+This package is currently a **TPDU codec**. It does not yet implement X.214 transport-service primitives, X.224 connection state machines, class negotiation, segmentation/reassembly, or TCP-profile connection mapping. The target architecture (codec + TSDU service engine; sole production consumer of go-tpkt) is in [ARCHITECTURE.md](ARCHITECTURE.md). Compliance evidence is in [COMPLIANCE.md](COMPLIANCE.md).
 
 ---
 
@@ -45,8 +47,8 @@ Each TPDU type has a `MarshalBinary` method implementing `encoding.BinaryMarshal
 
 | Method | Description |
 |--------|-------------|
-| `(*CR).MarshalBinary() ([]byte, error)` | Encode Connection Request (canonical param order 0xC1, 0xC2, 0xC0). |
-| `(*CC).MarshalBinary() ([]byte, error)` | Encode Connection Confirm. |
+| `(*CR).MarshalBinary() ([]byte, error)` | Encode Connection Request (canonical param order 0xC1, 0xC2, 0xC0, then UserData; max 128 octets). |
+| `(*CC).MarshalBinary() ([]byte, error)` | Encode Connection Confirm (same param order and UserData rules as CR). |
 | `(*DT).MarshalBinary() ([]byte, error)` | Encode Data (minimal or normal format). |
 | `(*DR).MarshalBinary() ([]byte, error)` | Encode Disconnect Request. |
 | `(*DC).MarshalBinary() ([]byte, error)` | Encode Disconnect Confirm. |
@@ -79,7 +81,7 @@ Lightweight helpers for protocol classification. They do not fully decode; they 
 |----------|-----------|-------------|
 | `LooksLikeCR` | `LooksLikeCR(b []byte) bool` | True if valid LI, enough length, type 0xE0..0xEF. |
 | `LooksLikeCC` | `LooksLikeCC(b []byte) bool` | True if valid LI, enough length, type 0xD0..0xDF. |
-| `LooksLikeDT` | `LooksLikeDT(b []byte) bool` | True if valid LI, enough length, type 0xF0..0xFF. |
+| `LooksLikeDT` | `LooksLikeDT(b []byte) bool` | True if valid LI, enough length, type 0xF0..0xF1 (same mask as `PeekType`). |
 | `LooksLikeDR` | `LooksLikeDR(b []byte) bool` | True if valid LI, enough length, type 0x80. |
 | `LooksLikeDC` | `LooksLikeDC(b []byte) bool` | True if valid LI, enough length, type 0xC0. |
 | `LooksLikeER` | `LooksLikeER(b []byte) bool` | True if valid LI, enough length, type 0x70. |
@@ -133,10 +135,13 @@ type CR struct {
     CallingSelector []byte   // from param 0xC1
     CalledSelector  []byte   // from param 0xC2
     TPDUSize        *uint8   // from param 0xC0
+    UserData        []byte   // octets after header; may alias decode input
 }
 ```
 
-Nil selector = absent; non-nil empty slice = present with length 0. `TPDUSize == nil` = parameter absent.
+Nil selector = absent; non-nil empty slice = present with length 0. `TPDUSize == nil` = parameter absent. `UserData` is preserved on decode/encode. Total CR length must be ≤ `MaxCRTPDULength` (128). Selector and unknown parameter values longer than `MaxParameterValueLength` (255) are rejected on encode.
+
+Duplicate known parameters (0xC1/0xC2/0xC0) follow X.224 13.2.3: **last value wins**. Canonical encode order (0xC1, 0xC2, 0xC0) is a local deterministic choice.
 
 ---
 
@@ -152,10 +157,11 @@ type CC struct {
     CallingSelector []byte
     CalledSelector  []byte
     TPDUSize        *uint8
+    UserData        []byte
 }
 ```
 
-Same nil/empty semantics as CR.
+Same nil/empty and user-data semantics as CR (no 128-octet total-length cap on CC).
 
 ---
 
@@ -297,6 +303,8 @@ No variable part per X.224.
 |------|--------|-------------|
 | `MinHeaderLength` | 2 | Minimum TPDU header size (LI + type code). |
 | `MaxLI` | 254 | Maximum length indicator; 255 reserved. |
+| `MaxCRTPDULength` | 128 | Maximum CR-TPDU length including LI (X.224 13.3). |
+| `MaxParameterValueLength` | 255 | Maximum parameter value length (one-octet length field). |
 | `ParamCallingSelector` | 0xC1 | CR/CC parameter: calling transport selector. |
 | `ParamCalledSelector` | 0xC2 | CR/CC parameter: called transport selector. |
 | `ParamTPDUSize` | 0xC0 | CR/CC parameter: TPDU size. |
@@ -312,17 +320,17 @@ Sentinel errors for classification with `errors.Is`. Decode/encode functions wra
 | Variable | Description |
 |----------|-------------|
 | `ErrTooShort` | Buffer shorter than required (e.g. no LI or type code). |
-| `ErrInvalidLI` | Length indicator invalid (> 254 or inconsistent). |
-| `ErrLengthMismatch` | Declared length does not match buffer. |
-| `ErrUnknownTPDUType` | TPDU type code not recognized. |
+| `ErrInvalidLI` | Length indicator invalid (> 254, or shorter than the TPDU fixed part). |
+| `ErrLengthMismatch` | TPDU length constraint violated (e.g. CR exceeds 128 octets). |
+| `ErrUnknownTPDUType` | TPDU type code not recognized (currently unused). |
 | `ErrInvalidTPDUCode` | Reserved or invalid TPDU code. |
 | `ErrReservedTPDU` | Reserved TPDU type code. |
 | `ErrMalformedParameter` | Parameter block malformed (e.g. length overrun). |
-| `ErrUnexpectedParameterLength` | Parameter length outside allowed range. |
+| `ErrUnexpectedParameterLength` | Parameter/selector length outside allowed range. |
 | `ErrUnsupportedTPDU` | Structurally valid but unsupported type (reserved/unknown). |
 | `ErrUnsupportedDTVariant` | Valid DT shape (e.g. extended format) not supported. |
-| `ErrInvalidClassOption` | Invalid class/option field. |
-| `ErrDuplicateKnownParameter` | Known parameter code repeated (CR/CC). |
+| `ErrInvalidClassOption` | Invalid class/option field (currently unused). |
+| `ErrDuplicateKnownParameter` | Retained for compatibility; decode no longer returns it (last-wins). |
 | `ErrInvalidEDUserDataLength` | ED user data not 1–16 octets. |
 | `ErrNilReceiver` | Method called on nil receiver (e.g. `MarshalBinary` on nil `*CR`). |
 | `ErrMissingRequiredField` | Required field for encode missing or invalid. |

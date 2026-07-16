@@ -20,12 +20,11 @@ func DecodeRJ(b []byte) (*RJ, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode RJ: %w", err)
 	}
-	if li > 4 {
+	if li > uint8(rjFixedPartLength) {
 		return nil, fmt.Errorf("decode RJ: LI=%d (RJ has no variable part): %w", li, ErrMalformedParameter)
 	}
-	headerLen := 1 + int(li)
-	if len(b) < headerLen {
-		return nil, fmt.Errorf("decode RJ: header length %d exceeds buffer %d: %w", headerLen, len(b), ErrTooShort)
+	if _, err := headerBounds(b, li, rjFixedPartLength); err != nil {
+		return nil, fmt.Errorf("decode RJ: %w", err)
 	}
 	if b[1]&0xF0 != 0x50 {
 		return nil, fmt.Errorf("decode RJ: not an RJ TPDU (code 0x%02x): %w", b[1], ErrInvalidTPDUCode)

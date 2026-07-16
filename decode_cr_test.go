@@ -67,9 +67,19 @@ func TestDecodeCR(t *testing.T) {
 			wantErr: ErrInvalidTPDUCode,
 		},
 		{
-			name:    "duplicate 0xC1",
+			name:    "duplicate 0xC1 last wins",
 			b:       []byte{0x0C, 0xE0, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC1, 1, 0x01, 0xC1, 1, 0x02},
-			wantErr: ErrDuplicateKnownParameter,
+			wantErr: nil,
+			check: func(t *testing.T, cr *CR) {
+				if len(cr.CallingSelector) != 1 || cr.CallingSelector[0] != 0x02 {
+					t.Errorf("CallingSelector = %v, want [0x02]", cr.CallingSelector)
+				}
+			},
+		},
+		{
+			name:    "LI shorter than fixed part",
+			b:       []byte{0x05, 0xE0, 0x00, 0x00, 0x00, 0x00, 0x00},
+			wantErr: ErrInvalidLI,
 		},
 	}
 	for _, tt := range tests {

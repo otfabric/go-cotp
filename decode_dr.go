@@ -20,9 +20,9 @@ func DecodeDR(b []byte) (*DR, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode DR: %w", err)
 	}
-	headerLen := 1 + int(li)
-	if len(b) < headerLen {
-		return nil, fmt.Errorf("decode DR: header length %d exceeds buffer %d: %w", headerLen, len(b), ErrTooShort)
+	headerLen, err := headerBounds(b, li, drFixedPartLength)
+	if err != nil {
+		return nil, fmt.Errorf("decode DR: %w", err)
 	}
 	if b[1] != 0x80 {
 		return nil, fmt.Errorf("decode DR: not a DR TPDU (code 0x%02x): %w", b[1], ErrInvalidTPDUCode)

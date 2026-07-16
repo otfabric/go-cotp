@@ -20,9 +20,9 @@ func DecodeAK(b []byte) (*AK, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode AK: %w", err)
 	}
-	headerLen := 1 + int(li)
-	if len(b) < headerLen {
-		return nil, fmt.Errorf("decode AK: header length %d exceeds buffer %d: %w", headerLen, len(b), ErrTooShort)
+	headerLen, err := headerBounds(b, li, akFixedPartLength)
+	if err != nil {
+		return nil, fmt.Errorf("decode AK: %w", err)
 	}
 	if b[1]&0xF0 != 0x60 {
 		return nil, fmt.Errorf("decode AK: not an AK TPDU (code 0x%02x): %w", b[1], ErrInvalidTPDUCode)

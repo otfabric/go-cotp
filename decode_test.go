@@ -290,8 +290,15 @@ func FuzzDecode(f *testing.F) {
 	f.Add([]byte{0x04, 0x20, 0x00, 0x00, 0x00})             // minimal EA
 	f.Add([]byte{0x04, 0x50, 0x00, 0x00, 0x00})             // minimal RJ
 	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = Decode(data)
-		// No panic; errors are acceptable. Invariant: Decode never partially fills on error.
+		d, err := Decode(data)
+		if err != nil {
+			if d.Type != 0 || d.CR != nil || d.CC != nil || d.DT != nil || d.DR != nil ||
+				d.DC != nil || d.ER != nil || d.ED != nil || d.AK != nil || d.EA != nil || d.RJ != nil || d.Raw != nil {
+				t.Fatalf("Decode error must return zero Decoded, got Type=%v", d.Type)
+			}
+			return
+		}
+		assertDecodedInvariant(t, d)
 	})
 }
 
@@ -362,5 +369,76 @@ func FuzzDecodeRJ(f *testing.F) {
 	f.Add(minimalRJ)
 	f.Fuzz(func(t *testing.T, data []byte) {
 		_, _ = DecodeRJ(data)
+	})
+}
+
+func FuzzLooksLikeDoesNotPanic(f *testing.F) {
+	f.Add(minimalCR)
+	f.Add(minimalDT)
+	f.Add([]byte{0xFF})
+	f.Add([]byte{})
+	f.Fuzz(func(t *testing.T, data []byte) {
+		_ = LooksLikeCR(data)
+		_ = LooksLikeCC(data)
+		_ = LooksLikeDR(data)
+		_ = LooksLikeDC(data)
+		_ = LooksLikeDT(data)
+		_ = LooksLikeER(data)
+		_ = LooksLikeED(data)
+		_ = LooksLikeAK(data)
+		_ = LooksLikeEA(data)
+		_ = LooksLikeRJ(data)
+		_ = IsConnectionOriented(data)
+	})
+}
+
+func FuzzMarshalDecodeRoundTrip(f *testing.F) {
+	f.Add(minimalCR)
+	f.Add(minimalCC)
+	f.Add(minimalDT)
+	f.Add(minimalDR)
+	f.Add(minimalED)
+	f.Fuzz(func(t *testing.T, data []byte) {
+		d, err := Decode(data)
+		if err != nil {
+			return
+		}
+		var out []byte
+		switch d.Type {
+		case TypeCR:
+			out, err = d.CR.MarshalBinary()
+		case TypeCC:
+			out, err = d.CC.MarshalBinary()
+		case TypeDT:
+			out, err = d.DT.MarshalBinary()
+		case TypeDR:
+			out, err = d.DR.MarshalBinary()
+		case TypeDC:
+			out, err = d.DC.MarshalBinary()
+		case TypeER:
+			out, err = d.ER.MarshalBinary()
+		case TypeED:
+			out, err = d.ED.MarshalBinary()
+		case TypeAK:
+			out, err = d.AK.MarshalBinary()
+		case TypeEA:
+			out, err = d.EA.MarshalBinary()
+		case TypeRJ:
+			out, err = d.RJ.MarshalBinary()
+		default:
+			return
+		}
+		if err != nil {
+			// Some decoded values may not re-encode under current encode rules (e.g. ED edge cases).
+			return
+		}
+		d2, err := Decode(out)
+		if err != nil {
+			t.Fatalf("successful marshal must decode: %v", err)
+		}
+		assertDecodedInvariant(t, d2)
+		if d2.Type != d.Type {
+			t.Fatalf("round-trip type mismatch: got %v want %v", d2.Type, d.Type)
+		}
 	})
 }

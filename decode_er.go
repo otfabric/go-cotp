@@ -19,9 +19,9 @@ func DecodeER(b []byte) (*ER, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode ER: %w", err)
 	}
-	headerLen := 1 + int(li)
-	if len(b) < headerLen {
-		return nil, fmt.Errorf("decode ER: header length %d exceeds buffer %d: %w", headerLen, len(b), ErrTooShort)
+	headerLen, err := headerBounds(b, li, erFixedPartLength)
+	if err != nil {
+		return nil, fmt.Errorf("decode ER: %w", err)
 	}
 	if b[1] != 0x70 {
 		return nil, fmt.Errorf("decode ER: not an ER TPDU (code 0x%02x): %w", b[1], ErrInvalidTPDUCode)

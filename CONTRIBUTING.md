@@ -44,6 +44,6 @@ When you change **public API signatures** (function parameters, return types, or
 
 - **[doc.go](doc.go)** — keep package documentation in sync.
 - **[README.md](README.md)** — if it references the changed API or examples.
-- **[API.md](API.md)** — keep the public API reference in sync.
+- **[docs/API.md](docs/API.md)** — keep the public API reference in sync.
 
 Also keep doc comments on exported symbols in sync with behavior.

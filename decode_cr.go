@@ -11,20 +11,23 @@ import (
 const crFixedPartLength = 6
 
 // DecodeCR decodes a Connection Request TPDU from b.
-// The buffer must be a complete COTP TPDU payload (e.g. from tpkt.Decode).
-// Returned CR's selector and Parameter.Value slices may alias b.
-// User data (octets after the header) is not exposed for CR.
+// The buffer must be a complete COTP TPDU payload (e.g. from tpkt.DecodePacket).
+// Returned CR's selector, Parameter.Value, and UserData slices may alias b.
+// User data (octets after the header) is exposed. Total CR length must be ≤ MaxCRTPDULength (128).
 func DecodeCR(b []byte) (*CR, error) {
 	if len(b) < 1+crFixedPartLength {
 		return nil, fmt.Errorf("decode CR: %w", ErrTooShort)
+	}
+	if len(b) > MaxCRTPDULength {
+		return nil, fmt.Errorf("decode CR: length %d > %d: %w", len(b), MaxCRTPDULength, ErrLengthMismatch)
 	}
 	li, err := ReadLI(b)
 	if err != nil {
 		return nil, fmt.Errorf("decode CR: %w", err)
 	}
-	headerLen := 1 + int(li)
-	if len(b) < headerLen {
-		return nil, fmt.Errorf("decode CR: header length %d exceeds buffer %d: %w", headerLen, len(b), ErrTooShort)
+	headerLen, err := headerBounds(b, li, crFixedPartLength)
+	if err != nil {
+		return nil, fmt.Errorf("decode CR: %w", err)
 	}
 	// Octet 2: code + CDT
 	if b[1]&0xF0 != 0xE0 {
@@ -57,6 +60,7 @@ func DecodeCR(b []byte) (*CR, error) {
 		cr.TPDUSize = res.tpduSize
 		cr.Parameters = res.parameters
 	}
+	cr.UserData = b[headerLen:]
 
 	return cr, nil
 }

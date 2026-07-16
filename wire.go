@@ -32,6 +32,21 @@ func HeaderLength(b []byte) (int, error) {
 	return headerLen, nil
 }
 
+// headerBounds checks that LI covers at least fixedPartLength octets of header
+// after the LI byte (X.224 13.2.2.1: the fixed part must fit within the header
+// defined by LI) and that b is long enough for the declared header.
+// Returns headerLen = 1+LI on success.
+func headerBounds(b []byte, li uint8, fixedPartLength int) (int, error) {
+	if int(li) < fixedPartLength {
+		return 0, fmt.Errorf("LI %d shorter than fixed part %d: %w", li, fixedPartLength, ErrInvalidLI)
+	}
+	headerLen := 1 + int(li)
+	if len(b) < headerLen {
+		return 0, fmt.Errorf("header length %d exceeds buffer %d: %w", headerLen, len(b), ErrTooShort)
+	}
+	return headerLen, nil
+}
+
 // PeekType classifies the TPDU from the first two octets (LI and type code).
 // It performs only minimal LI sanity; full header/variable-part validation is done by per-TPDU decoders.
 // Returns TypeED, TypeAK, TypeEA, TypeRJ for those codes; reserved/invalid codes return ErrInvalidTPDUCode or ErrReservedTPDU.

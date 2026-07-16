@@ -11,7 +11,7 @@ import (
 const ccFixedPartLength = 6
 
 // DecodeCC decodes a Connection Confirm TPDU from b.
-// Same semantics as DecodeCR; user data not exposed in v1.
+// Same semantics as DecodeCR for selectors and parameters; UserData after the header is exposed.
 func DecodeCC(b []byte) (*CC, error) {
 	if len(b) < 1+ccFixedPartLength {
 		return nil, fmt.Errorf("decode CC: %w", ErrTooShort)
@@ -20,9 +20,9 @@ func DecodeCC(b []byte) (*CC, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode CC: %w", err)
 	}
-	headerLen := 1 + int(li)
-	if len(b) < headerLen {
-		return nil, fmt.Errorf("decode CC: header length %d exceeds buffer %d: %w", headerLen, len(b), ErrTooShort)
+	headerLen, err := headerBounds(b, li, ccFixedPartLength)
+	if err != nil {
+		return nil, fmt.Errorf("decode CC: %w", err)
 	}
 	if b[1]&0xF0 != 0xD0 {
 		return nil, fmt.Errorf("decode CC: not a CC TPDU (code 0x%02x): %w", b[1], ErrInvalidTPDUCode)
@@ -50,6 +50,7 @@ func DecodeCC(b []byte) (*CC, error) {
 		cc.TPDUSize = res.tpduSize
 		cc.Parameters = res.parameters
 	}
+	cc.UserData = b[headerLen:]
 
 	return cc, nil
 }

@@ -63,7 +63,8 @@ func LooksLikeDC(b []byte) bool {
 	return b[1] == 0xC0
 }
 
-// LooksLikeDT returns true if b appears to be a DT TPDU (classification only: valid LI, buffer length, type 0xF0..0xFF).
+// LooksLikeDT returns true if b appears to be a DT TPDU (classification only: valid LI, buffer length, type 0xF0..0xF1).
+// The type mask matches PeekType and Decode (1111 000y), not the full high nibble.
 func LooksLikeDT(b []byte) bool {
 	if len(b) < MinHeaderLength {
 		return false
@@ -75,7 +76,7 @@ func LooksLikeDT(b []byte) bool {
 	if len(b) < 1+int(li) {
 		return false
 	}
-	return b[1]&0xF0 == 0xF0
+	return b[1]&0xFE == 0xF0
 }
 
 // LooksLikeER returns true if b appears to be an ER TPDU (classification only: valid LI, buffer length, type 0x70).
