@@ -1,12 +1,72 @@
 # go-cotp API reference
 
-Public API of package `github.com/otfabric/go-cotp` (package name: `cotp`). Input to decode is one complete COTP TPDU payload (typically from a TPKT packet via [go-tpkt](https://github.com/otfabric/go-tpkt) v1). Multi-octet fields use network byte order (big-endian).
+Public API of package `github.com/otfabric/go-cotp` (package name: `cotp`).
 
-This package is currently a **TPDU codec**. It does not yet implement X.214 transport-service primitives, X.224 connection state machines, class negotiation, segmentation/reassembly, or TCP-profile connection mapping. The target architecture (codec + TSDU service engine; sole production consumer of go-tpkt) is in [ARCHITECTURE.md](ARCHITECTURE.md). Compliance evidence is in [COMPLIANCE.md](COMPLIANCE.md).
+**Two surfaces:**
+
+1. **TP0 transport service** — `Connect` / `Accept` / `ReadTSDU` / `WriteTSDU` / `Close` (preferred for applications).
+2. **TPDU codec** — `Decode` / `MarshalBinary` on one complete COTP TPDU payload (no TPKT header; typically from [go-tpkt](https://github.com/otfabric/go-tpkt) v1).
+
+Multi-octet fields use network byte order (big-endian). Architecture: [ARCHITECTURE.md](ARCHITECTURE.md). Compliance: [COMPLIANCE.md](COMPLIANCE.md). Frozen service contract: [TP0_API_DESIGN.md](TP0_API_DESIGN.md).
 
 ---
 
-## Decode
+## TP0 service
+
+```go
+func Connect(ctx context.Context, conn net.Conn, cfg ClientConfig) (*Conn, error)
+func Accept(ctx context.Context, conn net.Conn, cfg ServerConfig) (*Conn, error)
+func (c *Conn) ReadTSDU(ctx context.Context) ([]byte, error)
+func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error
+func (c *Conn) Close() error
+func (c *Conn) Negotiated() NegotiatedParameters
+func (c *Conn) LocalAddr() net.Addr
+func (c *Conn) RemoteAddr() net.Addr
+```
+
+### Ownership and concurrency
+
+- `Connect` / `Accept` take ownership of `conn` **immediately**, including on config or handshake failure (conn is closed).
+- TPKT framing is internal; `*Conn` callers must not wrap the same stream with go-tpkt.
+- One reader + one writer may run concurrently; additional concurrent readers/writers are unsupported.
+- `Close` returns `ErrClosed` when it wins the terminal cause; otherwise it returns the first terminal cause. It unblocks waiters by closing the underlying stream.
+- Context expiry **after** I/O has started aborts the whole connection (`ErrClosed` + context error).
+- Empty TSDUs are rejected (`ErrEmptyTSDU`). Reassembly is bounded by `MaxTSDULength`.
+
+### Config highlights
+
+| Type | Notes |
+|------|--------|
+| `ClientConfig` | Selectors, `MaxTPDULength` / `MaxTSDULength`, `ConnectData` (≤32), `SizeProfile` |
+| `ServerConfig` | `LocalSelector` nil vs empty semantics; optional `OnConnect` policy |
+| `SizeProfileRFC1006Compat` | Default; standard `0xC0` path |
+| `SizeProfilePreferredMaximum` | Dual-offer / `0xF0` preferred-max path |
+| `NegotiatedParameters` | Frozen after handshake; slices are defensive copies; nil selector = absent |
+
+`ReadTSDU` / `WriteTSDU` use minimal Class 0 DT segmentation (`LI=2`, `TPDU-NR=0`, `EOT` only on the final segment; max user data per DT = negotiated TPDU length − 3).
+
+Typed errors: `RejectionError`, `UnexpectedTPDUError`, `DisconnectError` — use `errors.Is` / `errors.As`.
+
+### Pre-v1 API review notes (2026-07-16)
+
+Reviewed via `go doc -all github.com/otfabric/go-cotp` against [TP0_API_DESIGN.md](TP0_API_DESIGN.md):
+
+| Check | Result |
+|-------|--------|
+| Naming | Consistent (`Connect`/`Accept`, `ReadTSDU`/`WriteTSDU`, `MaxTPDULength`) |
+| Zero values | `MaxTPDULength`/`MaxTSDULength` 0 → documented defaults; `SizeProfile` 0 → RFC1006Compat |
+| nil vs empty slices | Selectors: nil=absent, non-nil empty=present len 0 (documented on `ServerConfig` / `NegotiatedParameters`) |
+| Ownership | Immediate ownership documented on `Connect`/`Accept` and in package doc |
+| Error wrapping | Sentinels + typed errors; `errors.Is`/`As` supported |
+| Internal leakage | `referenceAllocator`, size-path enums, ER cause constants remain unexported |
+| Codec vs service | Separated in package doc / README; codec still fully exported for tooling |
+| Godoc gaps | Minor: some codec `LooksLike*` helpers are terse; service types are adequate |
+
+No public API renames required before RC.
+
+---
+
+## Decode (codec)
 
 ### Decode
 
@@ -47,7 +107,7 @@ Each TPDU type has a `MarshalBinary` method implementing `encoding.BinaryMarshal
 
 | Method | Description |
 |--------|-------------|
-| `(*CR).MarshalBinary() ([]byte, error)` | Encode Connection Request (canonical param order 0xC1, 0xC2, 0xC0, then UserData; max 128 octets). |
+| `(*CR).MarshalBinary() ([]byte, error)` | Encode Connection Request (canonical param order 0xC1, 0xC2, 0xC0, 0xF0, then UserData; max 128 octets). |
 | `(*CC).MarshalBinary() ([]byte, error)` | Encode Connection Confirm (same param order and UserData rules as CR). |
 | `(*DT).MarshalBinary() ([]byte, error)` | Encode Data (minimal or normal format). |
 | `(*DR).MarshalBinary() ([]byte, error)` | Encode Disconnect Request. |
@@ -70,6 +130,8 @@ Calling `MarshalBinary` on a nil receiver returns an error wrapping `ErrNilRecei
 | `HeaderLength` | `HeaderLength(b []byte) (int, error)` | Total header length: 1 (LI) + LI value; header = `b[0:HeaderLength(b)]`. |
 | `PeekType` | `PeekType(b []byte) (TPDUType, error)` | TPDU type from first two octets; minimal validation only. |
 | `ExtractUserData` | `ExtractUserData(b []byte) ([]byte, error)` | User data of a DT or ED TPDU. Returns error if not DT/ED. Returned slice may alias `b`. |
+| `PreferredMaxTPDULength` | `PreferredMaxTPDULength(units uint32) (uint64, error)` | Exact `units×128` (generic codec; no ITOT clamp; units≠0). |
+| `PreferredMaxTPDUUnits` | `PreferredMaxTPDUUnits(length uint64) (uint32, error)` | Exact units for a multiple of 128 (no flooring). |
 
 ---
 
@@ -127,21 +189,24 @@ Single variable-part parameter. `Value` may alias decode input.
 
 ```go
 type CR struct {
-    CDT             uint8
-    DestinationRef  uint16
-    SourceRef       uint16
-    ClassOption     uint8
-    Parameters      []Parameter
-    CallingSelector []byte   // from param 0xC1
-    CalledSelector  []byte   // from param 0xC2
-    TPDUSize        *uint8   // from param 0xC0
-    UserData        []byte   // octets after header; may alias decode input
+    CDT                  uint8
+    DestinationRef       uint16
+    SourceRef            uint16
+    ClassOption          uint8
+    Parameters           []Parameter
+    CallingSelector      []byte   // from param 0xC1
+    CalledSelector       []byte   // from param 0xC2
+    TPDUSize             *uint8   // from param 0xC0
+    PreferredMaxTPDUSize *uint32  // from param 0xF0; wire units (×128), nil = absent
+    UserData             []byte   // octets after header; may alias decode input
 }
 ```
 
-Nil selector = absent; non-nil empty slice = present with length 0. `TPDUSize == nil` = parameter absent. `UserData` is preserved on decode/encode. Total CR length must be ≤ `MaxCRTPDULength` (128). Selector and unknown parameter values longer than `MaxParameterValueLength` (255) are rejected on encode.
+Nil selector = absent; non-nil empty slice = present with length 0. `TPDUSize` / `PreferredMaxTPDUSize` nil = parameter absent. `UserData` is preserved on decode/encode. Total CR length must be ≤ `MaxCRTPDULength` (128). Selector and unknown parameter values longer than `MaxParameterValueLength` (255) are rejected on encode.
 
-Duplicate known parameters (0xC1/0xC2/0xC0) follow X.224 13.2.3: **last value wins**. Canonical encode order (0xC1, 0xC2, 0xC0) is a local deterministic choice.
+Duplicate known parameters (0xC1/0xC2/0xC0/0xF0) follow X.224 13.2.3: **last value wins**. Canonical encode order (0xC1, 0xC2, 0xC0, 0xF0) is a local deterministic choice.
+
+Preferred maximum (`0xF0`) decode accepts 1–4 value octets (including leading zeros); encode uses the minimal big-endian form. The generic codec does **not** enforce the ITOT 511-unit ceiling.
 
 ---
 
@@ -149,19 +214,20 @@ Duplicate known parameters (0xC1/0xC2/0xC0) follow X.224 13.2.3: **last value wi
 
 ```go
 type CC struct {
-    CDT             uint8
-    DestinationRef  uint16
-    SourceRef       uint16
-    ClassOption     uint8
-    Parameters      []Parameter
-    CallingSelector []byte
-    CalledSelector  []byte
-    TPDUSize        *uint8
-    UserData        []byte
+    CDT                  uint8
+    DestinationRef       uint16
+    SourceRef            uint16
+    ClassOption          uint8
+    Parameters           []Parameter
+    CallingSelector      []byte
+    CalledSelector       []byte
+    TPDUSize             *uint8
+    PreferredMaxTPDUSize *uint32
+    UserData             []byte
 }
 ```
 
-Same nil/empty and user-data semantics as CR (no 128-octet total-length cap on CC).
+Same nil/empty and user-data semantics as CR (no 128-octet total-length cap on CC), including `PreferredMaxTPDUSize`.
 
 ---
 
@@ -308,6 +374,7 @@ No variable part per X.224.
 | `ParamCallingSelector` | 0xC1 | CR/CC parameter: calling transport selector. |
 | `ParamCalledSelector` | 0xC2 | CR/CC parameter: called transport selector. |
 | `ParamTPDUSize` | 0xC0 | CR/CC parameter: TPDU size. |
+| `ParamPreferredMaxTPDUSize` | 0xF0 | CR/CC parameter: preferred maximum TPDU size (units of 128). |
 | `MinEDUserDataLen` | 1 | Minimum ED user data length (X.224). |
 | `MaxEDUserDataLen` | 16 | Maximum ED user data length (X.224). |
 
@@ -334,6 +401,10 @@ Sentinel errors for classification with `errors.Is`. Decode/encode functions wra
 | `ErrInvalidEDUserDataLength` | ED user data not 1–16 octets. |
 | `ErrNilReceiver` | Method called on nil receiver (e.g. `MarshalBinary` on nil `*CR`). |
 | `ErrMissingRequiredField` | Required field for encode missing or invalid. |
+| `ErrInvalidConfig` | Invalid TP0/ITOT service configuration or callback policy input. |
+| `ErrHandshake` | TP0 handshake validation failure. |
+| `ErrEmptyTSDU` | Zero-length TSDU rejected (P1 local policy). |
+| `ErrTSDUTooLarge` | TSDU exceeds configured `MaxTSDULength`. |
 
 Example:
 

@@ -18,3 +18,32 @@ jobs:
       codecov-name: go-cotp
       go-versions: '["1.23","1.24","1.25","1.26"]'
     secrets: inherit
+
+  # Extra pre-release gates beyond the shared go-ci workflow.
+  closure-gates:
+    name: Closure gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      # Tooling job: use a current Go so @latest analyzers that require newer
+      # toolchains can install. Module minimum remains go.mod (1.23).
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+          cache: true
+      - name: Module verify
+        run: |
+          go mod download
+          go mod verify
+          git diff --check
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@2026.1
+          staticcheck ./...
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+      - name: Fuzz seed corpus (no generation)
+        run: go test -count=1 -timeout=120s -run 'Fuzz' ./...

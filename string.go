@@ -32,6 +32,9 @@ func (c *CR) String() string {
 	if c.TPDUSize != nil {
 		s += fmt.Sprintf(" size:%d", *c.TPDUSize)
 	}
+	if c.PreferredMaxTPDUSize != nil {
+		s += fmt.Sprintf(" pref:%d", *c.PreferredMaxTPDUSize)
+	}
 	if len(c.Parameters) > 0 {
 		s += fmt.Sprintf(" params:%d", len(c.Parameters))
 	}
@@ -55,6 +58,9 @@ func (c *CC) String() string {
 	}
 	if c.TPDUSize != nil {
 		s += fmt.Sprintf(" size:%d", *c.TPDUSize)
+	}
+	if c.PreferredMaxTPDUSize != nil {
+		s += fmt.Sprintf(" pref:%d", *c.PreferredMaxTPDUSize)
 	}
 	if len(c.Parameters) > 0 {
 		s += fmt.Sprintf(" params:%d", len(c.Parameters))

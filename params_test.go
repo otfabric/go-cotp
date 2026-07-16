@@ -19,7 +19,7 @@ func TestParseCRCCVariablePart(t *testing.T) {
 			b:       []byte{},
 			wantErr: nil,
 			check: func(t *testing.T, r *crccVariableResult) {
-				if r.callingSelector != nil || r.calledSelector != nil || r.tpduSize != nil || len(r.parameters) != 0 {
+				if r.callingSelector != nil || r.calledSelector != nil || r.tpduSize != nil || r.preferredMaxTPDUSize != nil || len(r.parameters) != 0 {
 					t.Errorf("expected empty result")
 				}
 			},
@@ -181,6 +181,11 @@ func FuzzParseCRCCVariablePart(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0xC1, 2, 0x01, 0x02})
 	f.Add([]byte{0xC0, 1, 7})
+	f.Add([]byte{0xF0, 1, 0x01})
+	f.Add([]byte{0xF0, 2, 0x00, 0x01})
+	f.Add([]byte{0xF0, 4, 0x00, 0x00, 0x01, 0xFF})
+	f.Add([]byte{0xF0, 0})
+	f.Add([]byte{0xF0, 5, 1, 2, 3, 4, 5})
 	f.Fuzz(func(t *testing.T, data []byte) {
 		_, _ = parseCRCCVariablePart(data)
 	})

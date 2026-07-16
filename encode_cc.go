@@ -8,12 +8,12 @@ import (
 )
 
 // MarshalBinary encodes the CC as a COTP TPDU (X.224 13.4).
-// Same rules as CR: canonical order 0xC1, 0xC2, 0xC0; then unknown Parameters; then UserData.
+// Same rules as CR: canonical order 0xC1, 0xC2, 0xC0, 0xF0; then unknown Parameters; then UserData.
 func (c *CC) MarshalBinary() ([]byte, error) {
 	if c == nil {
 		return nil, fmt.Errorf("marshal CC: %w", ErrNilReceiver)
 	}
-	varPart, err := encodeCRCCVariablePart(c.CallingSelector, c.CalledSelector, c.TPDUSize, c.Parameters, "CC")
+	varPart, err := encodeCRCCVariablePart(c.CallingSelector, c.CalledSelector, c.TPDUSize, c.PreferredMaxTPDUSize, c.Parameters, "CC")
 	if err != nil {
 		return nil, err
 	}

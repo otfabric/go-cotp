@@ -48,6 +48,7 @@ func DecodeCC(b []byte) (*CC, error) {
 		cc.CallingSelector = res.callingSelector
 		cc.CalledSelector = res.calledSelector
 		cc.TPDUSize = res.tpduSize
+		cc.PreferredMaxTPDUSize = res.preferredMaxTPDUSize
 		cc.Parameters = res.parameters
 	}
 	cc.UserData = b[headerLen:]

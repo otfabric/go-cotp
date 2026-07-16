@@ -6,7 +6,7 @@ PKGS := .
 
 COVERAGE_MIN := 75
 
-.PHONY: help test test-race test-short vet lint fmt fuzz fuzz-decode fuzz-parse bench tidy check check-full clean coverage coverage-html coverage-clean coverage-check
+.PHONY: help test test-race test-short vet lint lint-ci fmt vuln fuzz fuzz-decode fuzz-parse bench tidy check check-full clean coverage coverage-html coverage-clean coverage-check
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_.-]+:.*## / {printf "%-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -34,6 +34,10 @@ lint: ## Run staticcheck
 lint-ci: ## Run golangci-lint
 	@echo "Running golangci-lint"
 	@golangci-lint run $(PKGS)
+
+vuln: ## Run govulncheck
+	@echo "Running govulncheck"
+	@govulncheck $(PKGS)
 
 fmt: ## Run go fmt
 	@echo "Running go fmt..."
@@ -79,7 +83,7 @@ tidy: ## Tidy module files
 	@echo "Tidying module files..."
 	$(GO) mod tidy
 
-check: fmt tidy vet lint lint-ci test test-race coverage ## Run core release checks
+check: fmt tidy vet lint lint-ci vuln test test-race coverage ## Run core release checks
 	@echo "Check done."
 
 check-full: check ## Alias for check

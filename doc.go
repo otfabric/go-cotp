@@ -1,16 +1,22 @@
 // SPDX-License-Identifier: MIT
 
-// Package cotp implements X.224 / COTP (Connection-Oriented Transport Protocol)
-// TPDU parsing and encoding for use over RFC 1006 / RFC 2126 TPKT framing.
+// Package cotp implements a TP0 (Class 0) COTP transport service over RFC 1006
+// TPKT, plus a full X.224 TPDU codec.
 //
-// This package is a TPDU codec. It does not implement X.214 transport-service
-// primitives or X.224 connection state machines. See docs/COMPLIANCE.md.
+// Service API (preferred for applications):
 //
-// Input to decode is one complete COTP TPDU payload, typically already
-// extracted from one TPKT packet by github.com/otfabric/go-tpkt v1 (e.g. the slice
-// returned by tpkt.DecodePacket or tpkt.Reader.ReadPacket). The package does not
-// handle TPKT framing; that is the responsibility of go-tpkt. Do not pass an
-// entire TPKT packet to Decode.
+//	Connect / Accept → *Conn → ReadTSDU / WriteTSDU / Close
+//
+// Connect and Accept take ownership of the net.Conn immediately, perform the
+// Class 0 CR/CC handshake using go-tpkt internally, and return an open *Conn.
+// Consumers of *Conn must not use go-tpkt. One reader and one writer may run
+// concurrently; Close unblocks outstanding operations; a context that expires
+// after I/O has started aborts the connection.
+//
+// Codec API (tools / low-level): Decode / MarshalBinary on individual TPDU
+// payloads (no TPKT header). See docs/COMPLIANCE.md and docs/TP0_API_DESIGN.md.
+//
+// Do not pass an entire TPKT packet to Decode.
 //
 // API philosophy:
 //   - Strict on malformed structure: reject invalid wire data; no silent normalization.
@@ -22,8 +28,9 @@
 // Codec policies (documented intentional behavior):
 //   - LI must cover the TPDU fixed part (X.224 13.2.2.1); undersized LI returns ErrInvalidLI.
 //   - CR/CC user data after the header is exposed and round-tripped; CR total length ≤ 128 octets.
-//   - Duplicate known CR/CC parameters (0xC1/0xC2/0xC0) follow X.224 13.2.3: last value wins.
-//   - Canonical CR/CC encode order (0xC1, 0xC2, 0xC0) is a local deterministic choice, not an X.224 mandate.
+//   - Duplicate known CR/CC parameters (0xC1/0xC2/0xC0/0xF0) follow X.224 13.2.3: last value wins.
+//   - Canonical CR/CC encode order (0xC1, 0xC2, 0xC0, 0xF0) is a local deterministic choice, not an X.224 mandate.
+//   - Preferred maximum (0xF0) is typed as wire units; generic codec has no ITOT 511-unit clamp.
 //   - LooksLike* helpers are classification-only and use the same type masks as PeekType/Decode.
 //
 // Slice aliasing: Returned []byte fields (e.g. Parameter.Value, selector slices)

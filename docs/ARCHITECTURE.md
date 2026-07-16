@@ -10,7 +10,7 @@ This document freezes the intended service boundaries for:
 - [`github.com/otfabric/go-s7comm`](https://github.com/otfabric/go-s7comm)
 - [`github.com/otfabric/go-mms`](https://github.com/otfabric/go-mms)
 
-It is **not** a claim about current implementation completeness. Today go-cotp is primarily a TPDU codec; the transport-service engine is the planned v1 surface. See [COMPLIANCE.md](COMPLIANCE.md) for evidence-based status.
+It is **not** a claim about current implementation completeness. Today go-cotp is a TPDU codec plus a partial TP0 engine (connection core, `Connect`/`Accept`, segmented TSDUs; open-state error coverage and consumer migrations next). See [COMPLIANCE.md](COMPLIANCE.md) for evidence-based status.
 
 ## Principle
 
@@ -19,7 +19,7 @@ Each library exposes the **service provided by its protocol layer** and hides th
 | Layer | Provides to the layer above | Hides |
 | --- | --- | --- |
 | go-tpkt | Opaque TPDU bytes delimited by TPKT packets | TCP stream fragmentation / coalescing |
-| go-cotp | Established COTP connection carrying **complete TSDUs** | TPDU codecs, CR/CC, DT segmentation, DR/DC/ER, TPKT |
+| go-cotp | Established COTP connection carrying **complete TSDUs** | TPDU codecs, CR/CC, DT segmentation, TP0 refusal/error handling, future TP2 DR/DC release, and TPKT |
 | go-s7comm | S7 application services | COTP and TPKT |
 | go-mms | Session / Presentation / ACSE / MMS | COTP and TPKT |
 
@@ -139,8 +139,8 @@ Owns what is currently duplicated in go-s7comm and go-mms:
 Consumers should **not** normally see DT TPDUs:
 
 ```go
-err := conn.Write(ctx, applicationBytes)
-applicationBytes, err := conn.Read(ctx)
+err := conn.WriteTSDU(ctx, applicationBytes)
+applicationBytes, err := conn.ReadTSDU(ctx)
 ```
 
 Not:
@@ -151,7 +151,7 @@ raw, _ := dt.MarshalBinary()
 tpktWriter.WritePacket(raw)
 ```
 
-**Lifecycle** — states, legal TPDU-by-state, DR/DC/ER, unexpected TPDU, graceful disconnect, abort, TCP closure mapping, partial-segment cleanup, simultaneous disconnect, state-specific errors.
+**Lifecycle** — TP0 stream-close release; handshake refusal and protocol-error handling (DR/ER as applicable); unexpected TPDU → abort; TCP closure mapping; partial-segment cleanup; future TP2 explicit DR/DC release.
 
 **Classes (long-term)** — full common TPDU model; complete TP0; complete TP2 over RFC 2126; explicit representation or rejection of TP1/TP3/TP4.
 
@@ -172,43 +172,20 @@ S7 rack/slot, Siemens connection types, MMS session SPDUs, presentation contexts
 
 ### Recommended public service abstraction
 
-Exact names may change; the abstraction is an **established COTP transport connection carrying complete TSDUs**:
+Exact names and rules are in **[TP0_API_DESIGN.md](TP0_API_DESIGN.md)** (architecture frozen; public API frozen; negotiation implementation-frozen; TP0 engine next).
 
-```go
-type Config struct {
-    Class              Class
-    LocalSelector      []byte
-    RemoteSelector     []byte
-    MaxTPDULength      int
-    ExpeditedData      bool
-    AlternativeClasses []Class
-}
-
-type Conn struct { /* internal state */ }
-
-func Client(conn net.Conn, cfg Config) (*Conn, error)
-func Server(conn net.Conn, cfg ServerConfig) (*Conn, error)
-
-func (c *Conn) Read(ctx context.Context) ([]byte, error)
-func (c *Conn) Write(ctx context.Context, tsdu []byte) error
-func (c *Conn) Disconnect(ctx context.Context) error
-func (c *Conn) Abort() error
-func (c *Conn) Negotiated() NegotiatedParameters
-func (c *Conn) Close() error
-```
-
-Core engine accepts an existing `net.Conn` (or equivalent duplex stream). Optional `Dial` helpers are convenience only.
+Summary: `Connect` / `Accept` take ownership of a `net.Conn`, complete CR/CC, and return an open `*Conn` with `ReadTSDU` / `WriteTSDU` and a single `Close()` (TP0 T-DISCONNECT via stream close). Optional `Dial` is convenience only. Connect data is an **RFC 1006/ITOT profile** feature, not generic X.224 Class 0.
 
 ### Conceptual package layout
 
 ```
-cotp/                 # transport service API (Conn, Client, Server)
-cotp/tpdu/            # wire types and codecs (today’s root package content)
+cotp/                 # codec today; + Connect/Accept/Conn service (P1 keeps codecs in root)
+cotp/tpdu/            # optional later split of wire codecs
 cotp/itot/            # RFC 1006 / 2126 profile adapters (or internal)
 internal/state/       # TP0 / TP2 engines
 ```
 
-Layout is guidance, not a mandatory first commit.
+Layout is guidance, not a mandatory first commit. P1: do not relocate codecs while implementing the engine.
 
 ---
 
@@ -237,16 +214,15 @@ TPKT readers/writers, CR/CC, COTP references/classes, DT create/decode, EOT/segm
 
 ```go
 tcpConn, err := dial(...)
-cotpConn, err := cotp.Client(tcpConn, cotp.Config{
-    Class:          cotp.Class0,
+cotpConn, err := cotp.Connect(ctx, tcpConn, cotp.ClientConfig{
     LocalSelector:  s7LocalSelector,
     RemoteSelector: s7RemoteSelector,
     MaxTPDULength:  1024,
 })
 s7Client, err := s7.NewClient(cotpConn, options)
 
-err := cotpConn.Write(ctx, wire.EncodeS7Request(...))
-response, err := cotpConn.Read(ctx)
+err := cotpConn.WriteTSDU(ctx, wire.EncodeS7Request(...))
+response, err := cotpConn.ReadTSDU(ctx)
 ```
 
 ---
@@ -275,8 +251,7 @@ TPKT, CR/CC, COTP references/classes, DT encode/decode, COTP segmentation, DR/DC
 
 ```go
 tcpConn, err := dial(...)
-cotpConn, err := cotp.Client(tcpConn, cotp.Config{
-    Class:          cotp.Class0,
+cotpConn, err := cotp.Connect(ctx, tcpConn, cotp.ClientConfig{
     LocalSelector:  mmsOptions.LocalTSelector,
     RemoteSelector: mmsOptions.RemoteTSelector,
 })
@@ -316,7 +291,7 @@ Once a `net.Conn` is passed to go-cotp, **COTP has exclusive ownership** of prot
 | COTP classes | No | Owns | No | No |
 | COTP TPDU-size negotiation | No | Owns | No | No |
 | DT segmentation/reassembly | No | Owns | No | No |
-| DR/DC/ER lifecycle | No | Owns | No | No |
+| TP0 error/refusal lifecycle; future TP2 DR/DC release | No | Owns | No | No |
 | Complete TSDU service | No | Provides | Uses | Uses |
 | Siemens TSAP derivation | No | Opaque bytes | Owns | No |
 | S7 Setup Communication | No | No | Owns | No |
@@ -351,14 +326,15 @@ Once a `net.Conn` is passed to go-cotp, **COTP has exclusive ownership** of prot
 
 ## Migration sequence
 
-1. Finish go-cotp **codec P0** fixes ([COMPLIANCE.md](COMPLIANCE.md)).
-2. Design and freeze the COTP **TP0 service API** using requirements from both S7comm and MMS.
-3. Implement TP0 CR/CC, DT segmentation/reassembly, and DR/DC/ER lifecycle in go-cotp.
-4. Add an RFC 1006 adapter inside go-cotp using go-tpkt.
-5. Migrate go-s7comm from manual COTP to the new service.
-6. Migrate go-mms from its manual `transport/iso` implementation.
-7. Remove production go-tpkt dependencies from go-s7comm and go-mms.
-8. Implement TP2 / RFC 2126 without changing the consumer TSDU service abstraction.
+1. ~~Finish go-cotp **codec P0** fixes ([COMPLIANCE.md](COMPLIANCE.md)).~~ **Done** (v0.1.6).
+2. Design the COTP **TP0 service API** → **[TP0_API_DESIGN.md](TP0_API_DESIGN.md)**.
+3. ~~Typed Preferred Maximum codec + negotiation/handshake cases 1–60~~ **Done** (negotiation implementation-frozen).
+4. ~~TP0 connection core + client `Connect` + server `Accept` + segmented TSDU + open-state errors~~ **Done**; next: go-s7comm migration.
+5. RFC 1006 adapter is internal to go-cotp via go-tpkt (used by `Connect`).
+6. Migrate go-s7comm from manual COTP to the new service (incl. real PLC non-zero SRC-REF check).
+7. Migrate go-mms from its manual `transport/iso` implementation.
+8. Remove production go-tpkt dependencies from go-s7comm and go-mms.
+9. Implement TP2 / RFC 2126 without changing the consumer TSDU service abstraction.
 
 ## Clean boundary (summary)
 

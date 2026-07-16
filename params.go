@@ -7,15 +7,16 @@ import "fmt"
 // crccVariableResult holds the result of parsing CR/CC variable part.
 // DecodeCR/DecodeCC map this into CR/CC structs; the parser does not mutate TPDU structs.
 type crccVariableResult struct {
-	callingSelector []byte
-	calledSelector  []byte
-	tpduSize        *uint8
-	parameters      []Parameter
+	callingSelector      []byte
+	calledSelector       []byte
+	tpduSize             *uint8
+	preferredMaxTPDUSize *uint32
+	parameters           []Parameter
 }
 
 // parseCRCCVariablePart parses the variable part (octets 8..p) of a CR or CC TPDU.
 // Each parameter is code (1), length (1), value (length octets).
-// Duplicate known parameters (0xC1, 0xC2, 0xC0) follow X.224 13.2.3: the last value wins.
+// Duplicate known parameters (0xC1, 0xC2, 0xC0, 0xF0) follow X.224 13.2.3: the last value wins.
 // Unknown parameters are appended to the result (all occurrences preserved in order).
 // Value slices may alias b.
 func parseCRCCVariablePart(b []byte) (*crccVariableResult, error) {
@@ -45,6 +46,13 @@ func parseCRCCVariablePart(b []byte) (*crccVariableResult, error) {
 			}
 			v := value[0]
 			r.tpduSize = &v
+		case ParamPreferredMaxTPDUSize:
+			units, err := decodePreferredMaxUnits(value)
+			if err != nil {
+				return nil, fmt.Errorf("variable part: %w", err)
+			}
+			u := units
+			r.preferredMaxTPDUSize = &u
 		default:
 			r.parameters = append(r.parameters, Parameter{Code: code, Value: value})
 		}
@@ -74,9 +82,10 @@ func parseVariablePart(b []byte) ([]Parameter, error) {
 }
 
 // encodeCRCCVariablePart builds the CR/CC variable part in canonical order
-// (0xC1, 0xC2, 0xC0) then unknown Parameters. Selector and unknown values longer
-// than MaxParameterValueLength are rejected.
-func encodeCRCCVariablePart(calling, called []byte, tpduSize *uint8, params []Parameter, what string) ([]byte, error) {
+// (0xC1, 0xC2, 0xC0, 0xF0) then unknown Parameters. This order is a local
+// deterministic encoding policy, not an X.224 requirement.
+// Selector and unknown values longer than MaxParameterValueLength are rejected.
+func encodeCRCCVariablePart(calling, called []byte, tpduSize *uint8, preferredMax *uint32, params []Parameter, what string) ([]byte, error) {
 	var varPart []byte
 	if calling != nil {
 		if len(calling) > MaxParameterValueLength {
@@ -95,8 +104,17 @@ func encodeCRCCVariablePart(calling, called []byte, tpduSize *uint8, params []Pa
 	if tpduSize != nil {
 		varPart = append(varPart, ParamTPDUSize, 1, *tpduSize)
 	}
+	if preferredMax != nil {
+		enc, err := encodePreferredMaxUnits(*preferredMax)
+		if err != nil {
+			return nil, fmt.Errorf("marshal %s: %w", what, err)
+		}
+		varPart = append(varPart, ParamPreferredMaxTPDUSize, byte(len(enc)))
+		varPart = append(varPart, enc...)
+	}
 	for _, p := range params {
-		if p.Code == ParamCallingSelector || p.Code == ParamCalledSelector || p.Code == ParamTPDUSize {
+		if p.Code == ParamCallingSelector || p.Code == ParamCalledSelector ||
+			p.Code == ParamTPDUSize || p.Code == ParamPreferredMaxTPDUSize {
 			continue
 		}
 		if len(p.Value) > MaxParameterValueLength {

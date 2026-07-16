@@ -67,32 +67,36 @@ const MaxCRTPDULength = 128
 const MaxParameterValueLength = 255
 
 // CR is a Connection Request TPDU (X.224 13.3).
-// Nil selector = absent; non-nil empty slice = present with length 0. TPDUSize nil = parameter absent.
+// Nil selector = absent; non-nil empty slice = present with length 0.
+// TPDUSize / PreferredMaxTPDUSize nil = parameter absent.
+// PreferredMaxTPDUSize stores wire units (octets = units×128), not effective octets.
 // UserData is octets after the header (may be empty); may alias decode input. Total CR length ≤ 128.
 type CR struct {
-	CDT             uint8
-	DestinationRef  uint16
-	SourceRef       uint16
-	ClassOption     uint8
-	Parameters      []Parameter
-	CallingSelector []byte
-	CalledSelector  []byte
-	TPDUSize        *uint8
-	UserData        []byte
+	CDT                  uint8
+	DestinationRef       uint16
+	SourceRef            uint16
+	ClassOption          uint8
+	Parameters           []Parameter
+	CallingSelector      []byte
+	CalledSelector       []byte
+	TPDUSize             *uint8
+	PreferredMaxTPDUSize *uint32
+	UserData             []byte
 }
 
 // CC is a Connection Confirm TPDU (X.224 13.4).
 // Same nil/empty semantics as CR, including UserData after the header.
 type CC struct {
-	CDT             uint8
-	DestinationRef  uint16
-	SourceRef       uint16
-	ClassOption     uint8
-	Parameters      []Parameter
-	CallingSelector []byte
-	CalledSelector  []byte
-	TPDUSize        *uint8
-	UserData        []byte
+	CDT                  uint8
+	DestinationRef       uint16
+	SourceRef            uint16
+	ClassOption          uint8
+	Parameters           []Parameter
+	CallingSelector      []byte
+	CalledSelector       []byte
+	TPDUSize             *uint8
+	PreferredMaxTPDUSize *uint32
+	UserData             []byte
 }
 
 // DT is a Data TPDU (X.224 13.7). v1 supports minimal (class 0/1) and normal (class 2–4) formats.
@@ -183,7 +187,8 @@ type RJ struct {
 
 // Known parameter codes for CR/CC variable part (v1).
 const (
-	ParamCallingSelector = 0xC1
-	ParamCalledSelector  = 0xC2
-	ParamTPDUSize        = 0xC0
+	ParamCallingSelector      = 0xC1
+	ParamCalledSelector       = 0xC2
+	ParamTPDUSize             = 0xC0
+	ParamPreferredMaxTPDUSize = 0xF0 // Preferred maximum TPDU size (units of 128)
 )

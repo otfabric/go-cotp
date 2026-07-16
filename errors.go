@@ -38,4 +38,22 @@ var (
 	ErrNilReceiver = errors.New("cotp: nil receiver")
 	// ErrMissingRequiredField indicates a required field for encode is missing or invalid.
 	ErrMissingRequiredField = errors.New("cotp: missing required field")
+	// ErrInvalidConfig indicates invalid TP0/ITOT service configuration or callback policy input.
+	ErrInvalidConfig = errors.New("cotp: invalid configuration")
+	// ErrHandshake indicates a TP0 handshake or open-state protocol validation failure.
+	ErrHandshake = errors.New("cotp: handshake failed")
+	// ErrEmptyTSDU indicates a zero-length TSDU was rejected (P1 local policy).
+	ErrEmptyTSDU = errors.New("cotp: empty TSDU")
+	// ErrTSDUTooLarge indicates a TSDU exceeds the configured MaxTSDULength.
+	ErrTSDUTooLarge = errors.New("cotp: TSDU exceeds configured maximum")
+	// ErrClosed indicates the local connection was closed (or aborted after I/O).
+	ErrClosed = errors.New("cotp: connection closed")
+	// ErrDisconnected indicates the peer disconnected (EOF/reset), not a local Close.
+	ErrDisconnected = errors.New("cotp: peer disconnected")
+	// ErrConnectionRefused indicates the peer refused the connection (DR during handshake).
+	ErrConnectionRefused = errors.New("cotp: connection refused")
+	// ErrUnexpectedTPDU indicates a TPDU that is not legal in the current phase.
+	ErrUnexpectedTPDU = errors.New("cotp: unexpected TPDU")
+	// ErrIncompleteTSDU indicates EOF or abort while reassembling a multi-DT TSDU.
+	ErrIncompleteTSDU = errors.New("cotp: incomplete TSDU")
 )

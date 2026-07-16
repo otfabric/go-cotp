@@ -58,6 +58,7 @@ func DecodeCR(b []byte) (*CR, error) {
 		cr.CallingSelector = res.callingSelector
 		cr.CalledSelector = res.calledSelector
 		cr.TPDUSize = res.tpduSize
+		cr.PreferredMaxTPDUSize = res.preferredMaxTPDUSize
 		cr.Parameters = res.parameters
 	}
 	cr.UserData = b[headerLen:]
