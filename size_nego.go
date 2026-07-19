@@ -7,10 +7,20 @@ import (
 )
 
 // Class 0 standard TPDU sizes (X.224 §13.3.4 b).
+// The original X.224:1988 spec defined codes 0x07–0x0B for class 0, but
+// RFC 1006 and its successors (including IEC 61850-8-1 MMS stacks such as
+// libIEC61850 and iec61850bean) routinely negotiate 0x0C–0x10 in class 0
+// connections. Rejecting these codes prevents interoperability with conformant
+// implementations, so we accept the full range up to 65536 bytes (0x10).
 var class0StandardSizes = []struct {
 	code uint8
 	size int
 }{
+	{0x10, 65536},
+	{0x0F, 32768},
+	{0x0E, 16384},
+	{0x0D, 8192},
+	{0x0C, 4096},
 	{0x0B, 2048},
 	{0x0A, 1024},
 	{0x09, 512},
@@ -368,10 +378,12 @@ func interpretCCSize(sent sizeOffer, ccStandardCode *uint8, ccPreferredUnits *ui
 		return 0, fmt.Errorf("CC TPDU size code 0x%02x not allowed in class 0: %w", *ccStandardCode, ErrHandshake)
 	}
 	if sent.Omitted {
-		// Compat omitted CR: peer may return an explicit selection ≤ 65531 / local proposal.
+		// Compat omitted CR: peer may return an explicit selection. Accept sizes
+		// up to the local proposal, capping rather than rejecting larger values
+		// (e.g. iec61850bean sends 0x10 = 65536 while our local max is 65531).
 		local := clientEffectiveProposal(sent)
 		if size > local {
-			return 0, fmt.Errorf("CC standard %d exceeds local proposal %d: %w", size, local, ErrHandshake)
+			size = local
 		}
 		return size, nil
 	}
