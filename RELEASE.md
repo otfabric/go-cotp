@@ -1,5 +1,37 @@
 # go-cotp Releases
 
+## v1.0.1
+
+Improved RFC 1006 Class 0 TPDU size negotiation interoperability with existing industrial protocol stacks while preserving protocol validation for undefined TPDU size codes.
+
+### Interoperability
+
+* Expanded the accepted standard Class 0 TPDU size codes to include 0x0C–0x10 (4096–65536 bytes).
+    * This aligns with common RFC 1006 implementations used by industrial protocols such as IEC 61850 MMS.
+    * Improves interoperability with widely deployed stacks including libIEC61850 and iec61850bean.
+    * Undefined TPDU size codes continue to be rejected during connection establishment.
+* Improved negotiation when the client omits the TPDU Size parameter.
+    * Connection Confirm (CC) responses advertising a larger standard TPDU size are now capped to the local proposal instead of being rejected.
+    * This accommodates implementations that negotiate larger RFC 1006 TPDU sizes (for example 0x10 = 65536) while the local endpoint uses the protocol maximum of 65531 bytes.
+
+### Validation
+
+* Tightened handshake validation tests to distinguish between:
+    * valid extended standard TPDU size codes (0x0C–0x10), and
+    * undefined TPDU size codes (for example 0x11), which continue to fail the handshake with ErrHandshake.
+
+### Tests
+
+* Updated TPDU size negotiation tests to reflect the extended standard size table.
+* Added coverage for negotiation using the newly accepted standard sizes.
+* Updated interoperability tests for RFC 1006 compatibility and undefined TPDU size validation.
+
+No API changes. No breaking changes.
+
+Import path remains `github.com/otfabric/go-cotp`.
+
+---
+
 ## v0.1.6
 
 go-tpkt v1.0.0 migration, standards compliance audit, codec P0 correctness fixes, and target stack architecture docs.

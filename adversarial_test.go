@@ -260,8 +260,8 @@ func TestAdversarial_HandshakeInvalidSizeCode(t *testing.T) {
 	done := make(chan []byte, 1)
 	go func() {
 		defer func() { _ = c1.Close() }()
-		// 0x0C = 4096, not allowed in Class 0.
-		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{SourceRef: 7, TPDUSize: u8(0x0C)}))
+		// 0x11 = undefined TPDU size code; not in X.224 §13.3.4 b.
+		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{SourceRef: 7, TPDUSize: u8(0x11)}))
 		done <- readPeerTPDU(t, c1)
 	}()
 	_, err := cotp.Accept(context.Background(), c2, cotp.ServerConfig{MaxTPDULength: 1024})

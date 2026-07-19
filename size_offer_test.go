@@ -22,7 +22,9 @@ func TestBuildSizeOffer_Cases(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if b.StandardCode == nil || *b.StandardCode != 0x0B {
+		// fallbackStandard(65408) returns 0x0F (32768) since the table was
+		// extended to include 0x0F–0x10 for iec61850bean interoperability.
+		if b.StandardCode == nil || *b.StandardCode != 0x0F {
 			t.Fatalf("std=%v", b.StandardCode)
 		}
 		if b.PreferredUnits == nil || *b.PreferredUnits != 511 {
@@ -100,16 +102,21 @@ func TestBuildSizeOffer_Cases(t *testing.T) {
 			}
 		}
 	})
-	t.Run("case_6_non_standard_16384", func(t *testing.T) {
+	t.Run("case_6_standard_16384", func(t *testing.T) {
+		// 16384 is now a standard size (0x0E); RFC1006Compat takes the exact
+		// standard code path, not the preferred+fallback path.
 		b, err := buildSizeOffer(16384, SizeProfileRFC1006Compat)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if b.Offer.Preferred == nil || *b.Offer.Preferred != 16384 {
-			t.Fatalf("pref=%v", b.Offer.Preferred)
+		if b.StandardCode == nil || *b.StandardCode != 0x0E {
+			t.Fatalf("code=%v", b.StandardCode)
 		}
-		if b.Offer.Standard == nil || *b.Offer.Standard != 2048 {
+		if b.Offer.Standard == nil || *b.Offer.Standard != 16384 {
 			t.Fatalf("std=%v", b.Offer.Standard)
+		}
+		if b.Offer.Preferred != nil {
+			t.Fatalf("unexpected preferred=%v", b.Offer.Preferred)
 		}
 	})
 	t.Run("case_7_maximum_65531", func(t *testing.T) {
@@ -124,7 +131,8 @@ func TestBuildSizeOffer_Cases(t *testing.T) {
 		if b.PreferredUnits == nil || *b.PreferredUnits != 511 || b.Offer.Preferred == nil || *b.Offer.Preferred != 65408 {
 			t.Fatalf("%+v", b)
 		}
-		if b.StandardCode == nil || *b.StandardCode != 0x0B {
+		// fallbackStandard(65408) now returns 0x0F (32768); see case_1 comment.
+		if b.StandardCode == nil || *b.StandardCode != 0x0F {
 			t.Fatalf("fallback=%v", b.StandardCode)
 		}
 	})
@@ -198,8 +206,8 @@ func TestDecodeSizeOffer_DualPreserve(t *testing.T) {
 			t.Fatalf("err=%v", err)
 		}
 	})
-	t.Run("forbidden_c0_code", func(t *testing.T) {
-		c := uint8(0x0C)
+	t.Run("undefined_code_0x11", func(t *testing.T) {
+		c := uint8(0x11)
 		_, err := decodeSizeOffer(&c, nil)
 		if !errors.Is(err, ErrHandshake) {
 			t.Fatalf("err=%v", err)
