@@ -7,10 +7,18 @@ import (
 )
 
 // Class 0 standard TPDU sizes (X.224 §13.3.4 b).
+// The original X.224:1988 spec defined codes 0x07–0x0B for class 0, but
+// RFC 1006 and its successors (including IEC 61850-8-1 MMS stacks such as
+// libIEC61850) routinely negotiate 0x0C–0x0E in class 0 connections.
+// Rejecting these codes prevents interoperability with conformant
+// implementations, so we accept the full X.224:1997 range.
 var class0StandardSizes = []struct {
 	code uint8
 	size int
 }{
+	{0x0E, 16384},
+	{0x0D, 8192},
+	{0x0C, 4096},
 	{0x0B, 2048},
 	{0x0A, 1024},
 	{0x09, 512},
