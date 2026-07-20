@@ -1,5 +1,27 @@
 # go-cotp Releases
 
+## v1.0.2
+
+Documentation and lint hygiene. No API changes, no behavior changes.
+
+### Documentation
+
+- Added `ERRORS.md` — error taxonomy covering all sentinel values, the three typed error structs
+  (`RejectionError`, `UnexpectedTPDUError`, `DisconnectError`), `ConnectionPhase` constants, and
+  `errors.Is` / `errors.As` usage patterns for both the service API and the codec.
+- Added link to `ERRORS.md` in `README.md` Documentation section.
+
+### Linting
+
+- Removed a stale `formatters.exclusions.paths: examples` entry from `.golangci.yml`; the
+  repository has no `examples/` directory so the exclusion was dead code.
+
+No API changes. No breaking changes.
+
+Import path remains `github.com/otfabric/go-cotp`.
+
+---
+
 ## v1.0.1
 
 Improved RFC 1006 Class 0 TPDU size negotiation interoperability with existing industrial protocol stacks while preserving protocol validation for undefined TPDU size codes.

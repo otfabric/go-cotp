@@ -153,6 +153,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the ownership matrix.
 ## Documentation
 
 - [docs/API.md](docs/API.md) — Public API reference: functions, structs, constants, and errors.
+- [ERRORS.md](ERRORS.md) — Error taxonomy: sentinel values, typed errors, and usage patterns.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — Target stack service boundaries and dependency rules.
 - [docs/COMPLIANCE.md](docs/COMPLIANCE.md) — Standards compliance matrix and gap roadmap.
 - [RELEASE.md](RELEASE.md) — Release notes.
