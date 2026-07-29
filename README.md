@@ -16,6 +16,7 @@ This library is part of the **otfabric** OT protocol stack. It sits above [go-tp
 ## Table of contents
 
 - [Install](#install)
+- [Project structure](#project-structure)
 - [Scope](#scope)
 - [Usage](#usage)
   - [TP0 client](#tp0-client)
@@ -36,6 +37,33 @@ go get github.com/otfabric/go-cotp
 **Requires:** Go 1.23+
 
 The package lives at repo root so the import path is `github.com/otfabric/go-cotp` (same style as `github.com/otfabric/go-tpkt`). Package name is `cotp`. Framing dependency: `github.com/otfabric/go-tpkt` **v1.0.0+**.
+
+## Project structure
+
+```
+go-cotp/
+├── .                  Public package `cotp` — TP0 service + TPDU codec (flat root)
+├── docs/
+│   ├── ARCHITECTURE.md   Stack ownership vs go-tpkt / go-s7comm / go-mms
+│   ├── COMPLIANCE.md     Standards matrix and gap roadmap
+│   ├── TP0_API_DESIGN.md Frozen TP0 service contract
+│   └── API.md            Redirect stub → ../API.md
+├── spec/              X.214 / X.224 / RFC 1006 / RFC 2126 references
+├── testdata/
+│   ├── tp0/           TP0 conformance fixtures
+│   ├── unit/          Per-type golden hex
+│   └── captures/      Sanitized wire captures
+├── API.md             Public API reference
+├── ERRORS.md          Error taxonomy
+├── RELEASE.md         Release history
+├── CONTRIBUTING.md    Contribution / test guidance
+└── SECURITY.md        Vulnerability reporting
+```
+
+There is no `internal/` tree: service (`Connect` / `Accept` / `Conn`) and codec
+(`Decode` / `MarshalBinary`) live in the same package, split across focused files
+(`connect.go`, `accept.go`, `conn.go`, `decode_*.go`, `encode_*.go`, …). Stack
+boundaries are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Scope
 
@@ -152,7 +180,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the ownership matrix.
 
 ## Documentation
 
-- [docs/API.md](docs/API.md) — Public API reference: functions, structs, constants, and errors.
+- [API.md](API.md) — Public API reference: functions, structs, constants, and errors.
 - [ERRORS.md](ERRORS.md) — Error taxonomy: sentinel values, typed errors, and usage patterns.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — Target stack service boundaries and dependency rules.
 - [docs/COMPLIANCE.md](docs/COMPLIANCE.md) — Standards compliance matrix and gap roadmap.

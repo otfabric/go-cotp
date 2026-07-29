@@ -166,7 +166,7 @@ Annex A state tables (X.224 Annex A): **not implemented**.
 | G-04 | Bounded allocations | Security invariant | pass | No grow loops unbounded beyond input |
 | G-05 | Nil receiver MarshalBinary | API contract | pass | `ErrNilReceiver` |
 | G-06 | No partial Decoded on error | API contract | pass | FuzzDecode asserts zero value |
-| G-07 | Aliasing documented | API contract | pass | `doc.go`, `docs/API.md` |
+| G-07 | Aliasing documented | API contract | pass | `doc.go`, `API.md` |
 | G-08 | No panic on arbitrary input | Security invariant | pass | Fuzz helpers |
 | G-09 | `errors.Is` wrapping | API contract | pass | `%w` used |
 | G-10 | Selector encode len>255 | Security invariant | pass | `ErrUnexpectedParameterLength` |

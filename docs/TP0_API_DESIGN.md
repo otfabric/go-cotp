@@ -3,7 +3,7 @@
 **Status:** architecture **frozen**; public API **frozen**; negotiation **implementation-frozen**  
 **Date:** 2026-07-16 (rev. 7.1 + negotiation impl)  
 **Scope:** RFC 1006 / RFC 2126 Class 0 (TP0) over TPKT via go-tpkt  
-**Related:** [ARCHITECTURE.md](ARCHITECTURE.md), [COMPLIANCE.md](COMPLIANCE.md), [API.md](API.md)
+**Related:** [ARCHITECTURE.md](ARCHITECTURE.md), [COMPLIANCE.md](COMPLIANCE.md), [../API.md](../API.md)
 
 **Core abstraction:** an established COTP connection that reads and writes **complete TSDUs**.
 

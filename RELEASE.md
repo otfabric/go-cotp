@@ -1,5 +1,29 @@
 # go-cotp Releases
 
+## v1.0.3
+
+**Date:** 2026-07-30
+**Previous release:** v1.0.2
+
+## Summary
+
+Patch release: move the public API reference to the repository root for consistency with the other otfabric libraries. No API or behaviour changes.
+
+## Changes
+
+### Documentation
+
+- **API.md** — Moved from `docs/API.md` to the repository root; relative links to `docs/ARCHITECTURE.md`, `docs/COMPLIANCE.md`, and `docs/TP0_API_DESIGN.md` updated.
+- **docs/API.md** — Short redirect stub pointing at `../API.md` for any bookmarks that still use the old path.
+- **README.md**, **CONTRIBUTING.md**, **docs/COMPLIANCE.md**, **docs/TP0_API_DESIGN.md** — Links updated to the root `API.md`.
+- **README** — New **Project structure** section (flat root package, `docs/`, `spec/`, `testdata/`, key docs).
+
+### Unchanged
+
+- No API, wire, or behavioural changes. Import path remains `github.com/otfabric/go-cotp`.
+
+---
+
 ## v1.0.2
 
 Documentation and lint hygiene. No API changes, no behavior changes.
