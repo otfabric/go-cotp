@@ -1,5 +1,26 @@
 # go-cotp Releases
 
+## v1.0.4
+
+**Date:** 2026-07-30
+**Previous release:** v1.0.3
+
+## Summary
+
+Patch release: bump go-tpkt to v1.0.1. No API or behaviour changes.
+
+## Changes
+
+### Dependencies
+
+- **go-tpkt** — `v1.0.0` → **v1.0.1** (docs/tooling/coverage; no TPKT API change).
+
+### Unchanged
+
+- No API, wire, or behavioural changes. Import path remains `github.com/otfabric/go-cotp`.
+
+---
+
 ## v1.0.3
 
 **Date:** 2026-07-30
