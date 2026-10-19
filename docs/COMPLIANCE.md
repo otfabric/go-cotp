@@ -251,18 +251,19 @@ Aligned with [ARCHITECTURE.md](ARCHITECTURE.md) migration sequence.
    - ~~Benchmarks (`bench_test.go`)~~
    - ~~CI closure-gates job (staticcheck, govulncheck, fuzz seeds)~~
    - ~~Local-replace spikes against go-s7comm / go-mms~~ (ran; see note below — not a green migration)
-   - Remaining before RC: real PLC/MMS interoperability; consumer migration design for go-tpkt v1 + TSDU API
+   - ~~Consumer migration onto the TSDU API~~ (go-s7comm and go-mms both use go-cotp v1.0.4; go-tpkt is only indirect)
+   - Remaining: real PLC/MMS interoperability
 5. Expedited / RFC 1006 ED-as-DT remains out of P1 (see design non-goals).
 
 ### Local-replace spike results (2026-07-16)
 
-Replacing only `github.com/otfabric/go-cotp` with this tree (then `go mod tidy`) pulls **go-tpkt v1** into consumers. Both **go-s7comm** and **go-mms** still call pre-v1 tpkt APIs (`NewReader(conn)`, `ReadFrame`/`WriteFrame`, `tpkt.Parse`) and therefore **fail to build**. This is expected: migration must move consumers onto the TP0 TSDU service (and drop production go-tpkt), not merely bump the go-cotp module version.
+Replacing only `github.com/otfabric/go-cotp` with this tree (then `go mod tidy`) pulls **go-tpkt v1** into consumers. At the time, both **go-s7comm** and **go-mms** still called pre-v1 tpkt APIs (`NewReader(conn)`, `ReadFrame`/`WriteFrame`, `tpkt.Parse`) and therefore **failed to build**. This was expected: migration must move consumers onto the TP0 TSDU service (and drop production go-tpkt), not merely bump the go-cotp module version.
 
 ### P2 — migrate consumers, then TP2 / RFC 2126
 
-1. **After** go-cotp RC/v1: migrate go-s7comm off manual CR/DT/TPKT to COTP service (and off go-tpkt).
-2. Migrate go-mms off `transport/iso` manual TPKT/COTP.
-3. Remove production go-tpkt dependencies from go-s7comm and go-mms.
+1. ~~Migrate go-s7comm off manual CR/DT/TPKT to COTP service (and off go-tpkt).~~ Done.
+2. ~~Migrate go-mms off `transport/iso` manual TPKT/COTP.~~ Done.
+3. ~~Remove production go-tpkt dependencies from go-s7comm and go-mms.~~ Done.
 4. Class 2 state machine, AK/RJ credit, multiplexing.
 5. Expedited ED/EA paths and Amendment 1 optional expedited.
 6. Explicit vs non-explicit flow control options — **without** changing the consumer TSDU abstraction.
