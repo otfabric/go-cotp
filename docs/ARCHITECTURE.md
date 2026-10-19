@@ -10,7 +10,7 @@ This document freezes the intended service boundaries for:
 - [`github.com/otfabric/go-s7comm`](https://github.com/otfabric/go-s7comm)
 - [`github.com/otfabric/go-mms`](https://github.com/otfabric/go-mms)
 
-It is **not** a claim about current implementation completeness. Today go-cotp is a TPDU codec plus a partial TP0 engine (connection core, `Connect`/`Accept`, segmented TSDUs; open-state error coverage and consumer migrations next). See [COMPLIANCE.md](COMPLIANCE.md) for evidence-based status.
+It is **not** a claim about current implementation completeness. Today go-cotp provides a full TPDU codec plus a working TP0 service (`Connect` / `Accept` / `ReadTSDU` / `WriteTSDU` / `Close`, CR/CC negotiation, segmented TSDUs, open-state protocol enforcement); TP2, expedited data and full RFC 2126 are not implemented. See [COMPLIANCE.md](COMPLIANCE.md) for evidence-based status.
 
 ## Principle
 
@@ -113,7 +113,7 @@ go-cotp owns **two** surfaces:
 1. A complete COTP **TPDU codec**
 2. A COTP **transport protocol engine** exposing X.214-style transport-service semantics
 
-Today this repository mostly provides (1). Surface (2) is the primary architectural gap.
+Today this repository provides (1) and the TP0 (Class 0 / RFC 1006) subset of (2). The remaining gap in (2) is TP2 / RFC 2126 and expedited data.
 
 ### A. TPDU codec
 
@@ -172,14 +172,14 @@ S7 rack/slot, Siemens connection types, MMS session SPDUs, presentation contexts
 
 ### Recommended public service abstraction
 
-Exact names and rules are in **[TP0_API_DESIGN.md](TP0_API_DESIGN.md)** (architecture frozen; public API frozen; negotiation implementation-frozen; TP0 engine next).
+Exact names and rules are in **[TP0_API_DESIGN.md](TP0_API_DESIGN.md)** (architecture frozen; public API frozen; negotiation implementation-frozen; TP0 engine implemented).
 
 Summary: `Connect` / `Accept` take ownership of a `net.Conn`, complete CR/CC, and return an open `*Conn` with `ReadTSDU` / `WriteTSDU` and a single `Close()` (TP0 T-DISCONNECT via stream close). Optional `Dial` is convenience only. Connect data is an **RFC 1006/ITOT profile** feature, not generic X.224 Class 0.
 
 ### Conceptual package layout
 
 ```
-cotp/                 # codec today; + Connect/Accept/Conn service (P1 keeps codecs in root)
+cotp/                 # codec + Connect/Accept/Conn TP0 service (today: flat root package)
 cotp/tpdu/            # optional later split of wire codecs
 cotp/itot/            # RFC 1006 / 2126 profile adapters (or internal)
 internal/state/       # TP0 / TP2 engines
