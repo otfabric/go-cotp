@@ -35,11 +35,10 @@ Do **not** reopen the overall architecture unless implementation exposes a concr
 | Single-DT `ReadTSDU` / `WriteTSDU` | **Implemented and green** |
 | Segmentation / reassembly | **Implemented and green** |
 | Open-state protocol-error coverage | **Implemented and green** |
-| Consumer migrations (S7, then MMS) | **Next** |
+| Consumer migrations (S7, then MMS) | **Done** |
 
 > Architecture frozen · public API frozen · negotiation implementation-frozen
 
-Begin the TP0 engine next (§14 after cases 1–60).
 
 ---
 

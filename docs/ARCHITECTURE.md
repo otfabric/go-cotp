@@ -327,14 +327,14 @@ Once a `net.Conn` is passed to go-cotp, **COTP has exclusive ownership** of prot
 ## Migration sequence
 
 1. ~~Finish go-cotp **codec P0** fixes ([COMPLIANCE.md](COMPLIANCE.md)).~~ **Done** (v0.1.6).
-2. Design the COTP **TP0 service API** → **[TP0_API_DESIGN.md](TP0_API_DESIGN.md)**.
+2. ~~Design the COTP **TP0 service API**~~ **Done**: [TP0_API_DESIGN.md](TP0_API_DESIGN.md).
 3. ~~Typed Preferred Maximum codec + negotiation/handshake cases 1–60~~ **Done** (negotiation implementation-frozen).
-4. ~~TP0 connection core + client `Connect` + server `Accept` + segmented TSDU + open-state errors~~ **Done**; next: go-s7comm migration.
-5. RFC 1006 adapter is internal to go-cotp via go-tpkt (used by `Connect`).
-6. Migrate go-s7comm from manual COTP to the new service (incl. real PLC non-zero SRC-REF check).
-7. Migrate go-mms from its manual `transport/iso` implementation.
-8. Remove production go-tpkt dependencies from go-s7comm and go-mms.
-9. Implement TP2 / RFC 2126 without changing the consumer TSDU service abstraction.
+4. ~~TP0 connection core + client `Connect` + server `Accept` + segmented TSDU + open-state errors~~ **Done**.
+5. ~~RFC 1006 adapter is internal to go-cotp via go-tpkt (used by `Connect`).~~ **Done**.
+6. ~~Migrate go-s7comm from manual COTP to the new service.~~ **Done** (go-s7comm requires go-cotp v1.0.4). Still open: checking a real PLC's non-zero SRC-REF.
+7. ~~Migrate go-mms from its manual `transport/iso` implementation.~~ **Done** (`transport/iso` now dials through go-cotp).
+8. ~~Remove production go-tpkt dependencies from go-s7comm and go-mms.~~ **Done** (go-tpkt is only an indirect dependency of both).
+9. Implement TP2 / RFC 2126 without changing the consumer TSDU service abstraction. Not started.
 
 ## Clean boundary (summary)
 
