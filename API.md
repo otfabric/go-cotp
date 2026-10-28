@@ -28,9 +28,11 @@ func (c *Conn) RemoteAddr() net.Addr
 
 - `Connect` / `Accept` take ownership of `conn` **immediately**, including on config or handshake failure (conn is closed).
 - TPKT framing is internal; `*Conn` callers must not wrap the same stream with go-tpkt.
-- One reader + one writer may run concurrently; additional concurrent readers/writers are unsupported.
+- Full duplex: one `ReadTSDU` and one `WriteTSDU` run concurrently. Concurrent `WriteTSDU` calls are serialized for a whole TSDU (segments never interleave); concurrent `ReadTSDU` calls are serialized likewise. A caller waiting its turn returns `ctx.Err()` if its context ends first.
+- Per-direction deadlines: `ReadTSDU` applies its context with `SetReadDeadline` only, `WriteTSDU` with `SetWriteDeadline` only, and each restores its direction to no deadline when it returns. Only the `Connect`/`Accept` handshake uses `SetDeadline`. Callers must not set deadlines on the underlying `net.Conn`.
 - `Close` returns `ErrClosed` when it wins the terminal cause; otherwise it returns the first terminal cause. It unblocks waiters by closing the underlying stream.
-- Context expiry **after** I/O has started aborts the whole connection (`ErrClosed` + context error).
+- A context that ends an operation before any octet of the TSDU crossed the stream returns `ctx.Err()` (not wrapped in `ErrClosed`) and the connection stays open. Once octets have moved, it aborts the whole connection (`ErrClosed` + context error).
+- A reset, broken pipe, or EOF inside a packet aborts with `ErrDisconnected` (`*DisconnectError` carries the cause), joined with `ErrIncompleteTSDU` when it interrupts a TSDU.
 - Empty TSDUs are rejected (`ErrEmptyTSDU`). Reassembly is bounded by `MaxTSDULength`.
 
 ### Config highlights

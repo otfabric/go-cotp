@@ -16,7 +16,7 @@ go mod download
 
 - **Unit tests**: `make test` (runs `go test .` for the root package).
 - **Race tests**: `make test-race` or rely on CI, which runs race tests.
-- **Coverage**: `make coverage` for a report; `make coverage-check` to enforce minimum 75% coverage.
+- **Coverage**: `make coverage` for a report; `make coverage-check` to enforce minimum 90% coverage.
 - **Fuzz**: `make fuzz` (or `fuzz-decode` / `fuzz-parse`) to run fuzz targets.
 
 ## Code style and linting

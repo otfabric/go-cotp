@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"syscall"
 )
 
 // Minimal Class 0 DT overhead: LI (1) + type (1) + TPDU-NR/EOT (1).
@@ -19,7 +20,14 @@ const minNegotiatedTPDULength = minimalDTOverhead + 1
 
 // WriteTSDU sends one complete TSDU as one or more minimal Class 0 DT segments.
 // Empty or locally oversized TSDUs are rejected before protocol I/O.
-// writeMu is held for the entire segmented transfer.
+//
+// Concurrent writers are serialized for the entire segmented transfer, so
+// segments of different TSDUs never interleave; a writer waiting its turn
+// returns ctx.Err() if ctx ends first. ctx bounds only the write direction
+// (SetWriteDeadline); a concurrent ReadTSDU is unaffected. If ctx ends the
+// write before any octet of the TSDU reached the stream, WriteTSDU returns
+// ctx.Err() and the connection stays open; once octets have moved, the stream
+// may hold a partial TSDU and the connection is aborted.
 func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error {
 	if c == nil {
 		return fmt.Errorf("%w", ErrNilReceiver)
@@ -28,8 +36,10 @@ func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error {
 		ctx = context.Background()
 	}
 
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
+	if err := c.writeMu.lock(ctx); err != nil {
+		return err
+	}
+	defer c.writeMu.unlock()
 
 	if err := c.requireOpen(); err != nil {
 		return err
@@ -45,12 +55,13 @@ func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error {
 		return fmt.Errorf("negotiated MaxTPDULength %d < %d: %w", c.negotiated.MaxTPDULength, minNegotiatedTPDULength, ErrInvalidConfig)
 	}
 
-	clear, err := armDeadline(c.raw, ctx)
+	disarm, err := c.writeDeadline.arm(ctx)
 	if err != nil {
 		return err
 	}
-	defer clear()
+	defer disarm()
 
+	start, tracked := c.writeProgress()
 	for offset := 0; offset < len(tsdu); {
 		end := offset + maxSeg
 		if end > len(tsdu) {
@@ -63,6 +74,11 @@ func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error {
 			return c.abort(err)
 		}
 		if err := c.writer.WritePacket(payload); err != nil {
+			if n, ok := c.writeProgress(); tracked && ok && n == start {
+				if cerr := c.idleTimeout(ctx, err); cerr != nil {
+					return cerr
+				}
+			}
 			return c.classifyIO(ctx, err)
 		}
 		offset = end
@@ -72,7 +88,13 @@ func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error {
 
 // ReadTSDU receives one complete TSDU by reassembling minimal Class 0 DT segments
 // until EOT=1. The returned slice is caller-owned and does not alias internal buffers.
-// readMu is held for the entire reassembly operation.
+//
+// One reader at a time reassembles a TSDU; a concurrent caller waits its turn
+// and returns ctx.Err() if ctx ends first. ctx bounds only the read direction
+// (SetReadDeadline); a concurrent WriteTSDU is unaffected. If ctx ends the
+// read before any octet of the TSDU arrived, ReadTSDU returns ctx.Err() and
+// the connection stays open; once octets have been consumed, the connection
+// is aborted.
 func (c *Conn) ReadTSDU(ctx context.Context) ([]byte, error) {
 	if c == nil {
 		return nil, fmt.Errorf("%w", ErrNilReceiver)
@@ -81,8 +103,10 @@ func (c *Conn) ReadTSDU(ctx context.Context) ([]byte, error) {
 		ctx = context.Background()
 	}
 
-	c.readMu.Lock()
-	defer c.readMu.Unlock()
+	if err := c.readMu.lock(ctx); err != nil {
+		return nil, err
+	}
+	defer c.readMu.unlock()
 
 	if err := c.requireOpen(); err != nil {
 		return nil, err
@@ -99,18 +123,24 @@ func (c *Conn) ReadTSDU(ctx context.Context) ([]byte, error) {
 		maxTSDU = DefaultMaxTSDULength
 	}
 
-	clear, err := armDeadline(c.raw, ctx)
+	disarm, err := c.readDeadline.arm(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer clear()
+	defer disarm()
 
+	start, tracked := c.readProgress()
 	segments := make([][]byte, 0, 4)
 	total := 0
 
 	for {
 		payload, err := c.reader.ReadPacket()
 		if err != nil {
+			if n, ok := c.readProgress(); tracked && ok && n == start {
+				if cerr := c.idleTimeout(ctx, err); cerr != nil {
+					return nil, cerr
+				}
+			}
 			return nil, c.classifyIOPhase(ctx, err, len(segments) > 0)
 		}
 
@@ -148,6 +178,18 @@ func (c *Conn) ReadTSDU(ctx context.Context) ([]byte, error) {
 	return out, nil
 }
 
+// peerGone reports whether err means the stream itself is gone (reset, broken
+// pipe, closed underneath go-cotp, or EOF inside a packet), as opposed to a
+// framing or protocol error.
+func peerGone(err error) bool {
+	return errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.ECONNABORTED) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, io.ErrClosedPipe)
+}
+
 func maxSegmentPayload(maxTPDU int) int {
 	if maxTPDU < minNegotiatedTPDULength {
 		return 0
@@ -163,6 +205,17 @@ func (c *Conn) requireOpen() error {
 		return fmt.Errorf("%w", ErrClosed)
 	}
 	return nil
+}
+
+// idleTimeout returns ctx's error when err is the stream deadline that ctx
+// armed and no octet of the operation has crossed the stream, so the
+// connection is still at a packet boundary and stays open. It returns nil
+// when err must be classified (and the connection aborted) as usual.
+func (c *Conn) idleTimeout(ctx context.Context, err error) error {
+	if c.terminalKind() != terminalNone || !isTimeout(err) {
+		return nil
+	}
+	return ctxDoneErr(ctx)
 }
 
 func (c *Conn) classifyIO(ctx context.Context, err error) error {
@@ -181,17 +234,20 @@ func (c *Conn) classifyIOPhase(ctx context.Context, err error, midTSDU bool) err
 	if ctx.Err() != nil {
 		return c.abort(fmt.Errorf("%w: %w", ErrClosed, ctx.Err()))
 	}
-	if _, ok := ctx.Deadline(); ok {
-		var netErr net.Error
-		if errors.As(err, &netErr) && netErr.Timeout() {
-			return c.abort(fmt.Errorf("%w: %w", ErrClosed, context.DeadlineExceeded))
-		}
+	if _, ok := ctx.Deadline(); ok && isTimeout(err) {
+		return c.abort(fmt.Errorf("%w: %w", ErrClosed, context.DeadlineExceeded))
 	}
 	if errors.Is(err, io.EOF) {
 		if midTSDU {
 			return c.abort(errors.Join(ErrIncompleteTSDU, &DisconnectError{Cause: io.EOF}))
 		}
 		return c.abort(&DisconnectError{Cause: io.EOF})
+	}
+	if peerGone(err) {
+		if midTSDU || errors.Is(err, io.ErrUnexpectedEOF) {
+			return c.abort(errors.Join(ErrIncompleteTSDU, &DisconnectError{Cause: err}))
+		}
+		return c.abort(&DisconnectError{Cause: err})
 	}
 	if midTSDU {
 		return c.abort(errors.Join(ErrIncompleteTSDU, &DisconnectError{Cause: err}))

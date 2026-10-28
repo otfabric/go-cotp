@@ -141,9 +141,10 @@ cotpConn, err := cotp.Accept(ctx, raw, cotp.ServerConfig{
 ### Concurrency and ownership
 
 - `Connect` / `Accept` take ownership of `conn` **immediately** (including on error).
-- One reader + one writer may run concurrently on a `*Conn`.
+- Full duplex: a `ReadTSDU` and a `WriteTSDU` run concurrently. Concurrent `WriteTSDU` calls are serialized per TSDU, so segments of different TSDUs never interleave; concurrent `ReadTSDU` calls are likewise serialized (one reassembly at a time).
+- A context bounds only its own direction: `ReadTSDU` uses `SetReadDeadline`, `WriteTSDU` uses `SetWriteDeadline`, and only the `Connect`/`Accept` handshake uses `SetDeadline`. A write timing out never cuts a concurrent read, and vice versa. Do not set deadlines on the underlying `net.Conn` yourself.
+- If a context ends an operation **before any octet** of the TSDU crossed the stream (including while waiting for its turn), the call returns `ctx.Err()` and the connection stays open. Once octets have moved, the connection is aborted (`ErrClosed` + context error), never left half-written.
 - `Close` unblocks outstanding `Connect`/`Accept` waiters on the peer side and local `ReadTSDU`/`WriteTSDU`.
-- If a context expires **after** I/O has started, the connection is aborted (not left half-open).
 - Limits: `MaxTPDULength` ∈ `[128, 65531]` (0 → default 65531); `MaxTSDULength` caps reassembled TSDUs; connect data ≤ 32 octets.
 - Compliance: TP0 / RFC 1006 Class 0 profile — not full X.214/X.224/RFC 2126. See [docs/COMPLIANCE.md](docs/COMPLIANCE.md).
 

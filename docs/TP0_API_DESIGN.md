@@ -718,6 +718,7 @@ Flooring (`configured / 128`) stays in **service** `preferredUnitsAndEffective` 
 | 23 | Server selector set, CR selector absent | default reject |
 | 24 | CC selector mismatched | client handshake fails |
 | 25 | Context expires after first DT | whole Conn aborts |
+| 25a | Context expires on an idle read / stalled first write | `ctx.Err()`, Conn usable, other direction unaffected |
 | 26 | Local `Close` wakes blocked read | `ErrClosed` |
 | 27 | `MaxTSDULength < 0` | `ErrInvalidConfig` |
 | 28 | `WriteTSDU` larger than max | `ErrTSDUTooLarge`, no I/O, Conn usable |
@@ -879,19 +880,21 @@ Generic codec may still preserve unknown parameters for tooling (COMPLIANCE B-07
 ## 7. Concurrency, I/O-start, and terminal cause
 
 1. Exclusive `net.Conn` ownership after `Connect`/`Accept` entry.
-2. One concurrent `ReadTSDU` + one concurrent `WriteTSDU`.
+2. Full duplex: one `ReadTSDU` and one `WriteTSDU` run concurrently. Concurrent `WriteTSDU` calls are serialized per TSDU (segments never interleave); concurrent `ReadTSDU` calls likewise.
 3. `Close` may run concurrently; universal unblock for both directions.
+4. Per-direction deadlines: `ReadTSDU` applies `ctx` with `SetReadDeadline` only and `WriteTSDU` with `SetWriteDeadline` only; each restores its direction to no deadline on return. Cancellation (no deadline) sets that direction's deadline to the past. Only the `Connect`/`Accept` handshake uses `SetDeadline`.
 
 ### 7.1 When protocol I/O has “started”
 
-**Conservative definition:** protocol I/O has started once the first underlying `Read`, `Write`, `ReadPacket`, or `WritePacket` call is **attempted** — not only when a positive byte count is observed.
+**Definition:** protocol I/O has started for a call once at least one octet of its TSDU has crossed the stream (counted on the underlying `net.Conn`). Until then the stream is still at a packet boundary and a context expiry is harmless.
 
 | Situation | Behavior |
 | --- | --- |
 | `ctx` done while waiting for `readMu`/`writeMu` (no underlying I/O yet) | return `ctx.Err()`; Conn remains usable |
-| `ctx` done **before** any protocol I/O for this call | return `ctx.Err()`; Conn remains usable |
-| `ctx` expires/cancels **after** first underlying I/O attempt | **abort and close** entire Conn; both directions unusable; `ErrClosed` + `ctx.Err()` |
-| Plain network timeout / incomplete TPKT–TPDU–TSDU | normally **abort** (stream may be desynchronized) |
+| `ctx` done **before** any octet of this TSDU moved (incl. a stalled first write or an idle read) | return `ctx.Err()`; Conn remains usable; the other direction is untouched |
+| `ctx` expires/cancels **after** an octet moved | **abort and close** entire Conn; both directions unusable; `ErrClosed` + `ctx.Err()` |
+| Reset / broken pipe / EOF inside a packet | **abort**; `ErrDisconnected` (+ `ErrIncompleteTSDU` mid-TSDU) |
+| Other network error / incomplete TPKT–TPDU–TSDU | **abort** (stream may be desynchronized) |
 
 ### 7.2 Terminal-cause arbitration
 

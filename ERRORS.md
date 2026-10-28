@@ -41,11 +41,17 @@ These are returned by `Connect`, `Accept`, `ReadTSDU`, and `WriteTSDU`.
 |----------|---------------|
 | `ErrEmptyTSDU` | Zero-length TSDU was rejected (local policy) |
 | `ErrTSDUTooLarge` | TSDU exceeds `MaxTSDULength` |
-| `ErrClosed` | Local `Close` was called; this side initiated the teardown |
-| `ErrDisconnected` | Peer disconnected (EOF / TCP reset); not a local Close |
+| `ErrClosed` | Local `Close` was called, or the connection was aborted after I/O (e.g. a context that ended an operation after octets had moved, joined with `context.DeadlineExceeded` / `context.Canceled`) |
+| `ErrDisconnected` | The stream went away: peer EOF, TCP reset, broken pipe, or EOF inside a packet; not a local Close |
 | `ErrConnectionRefused` | Peer sent a DR during the handshake |
 | `ErrUnexpectedTPDU` | Received a TPDU that is not legal in the current phase |
 | `ErrIncompleteTSDU` | EOF or connection abort while reassembling a multi-DT TSDU |
+
+A context that ends `ReadTSDU` / `WriteTSDU` **before any octet** of the TSDU
+crossed the stream (an idle read, a stalled first write, or waiting for another
+caller's TSDU to finish) returns the bare `ctx.Err()`, not wrapped in
+`ErrClosed`, and the connection stays usable. The context of one direction
+never affects the other direction.
 
 ---
 
@@ -55,14 +61,14 @@ Use `errors.As` to extract structured detail.
 
 ### `*RejectionError`
 
-Returned by `Connect` or `Accept` when the peer actively refuses the
-connection by sending a DR TPDU during the handshake.
+Returned by `Connect` when the peer refuses the connection with a DR TPDU
+during the handshake, and by `Accept` when the local policy (or a non-Class-0
+CR) refuses it.
 
 ```go
 type RejectionError struct {
-    Phase  ConnectionPhase // Handshake or OpenState
     Reason DisconnectReason
-    Info   string
+    Info   []byte
 }
 ```
 
@@ -70,14 +76,13 @@ Wraps `ErrConnectionRefused`.
 
 ### `*UnexpectedTPDUError`
 
-Returned by `ReadTSDU` or `WriteTSDU` when a TPDU is received that is not
-valid for the current connection phase.
+Returned when a TPDU arrives that is not legal for the current phase (for
+example a non-CC reply to CR, or a non-DT TPDU after the connection opened).
 
 ```go
 type UnexpectedTPDUError struct {
-    Phase    ConnectionPhase
-    TPDUType TPDUType
-    Msg      string
+    Type  TPDUType
+    Phase ConnectionPhase
 }
 ```
 
@@ -85,18 +90,18 @@ Wraps `ErrUnexpectedTPDU`.
 
 ### `*DisconnectError`
 
-Returned by `ReadTSDU` when the peer sends a DR or DC TPDU signalling an
-intentional disconnect.
+Returned by `Connect`, `Accept`, `ReadTSDU`, and `WriteTSDU` when the stream
+goes away: peer EOF, TCP reset, broken pipe, or EOF inside a packet. `Cause` is
+the underlying error (e.g. `io.EOF`).
 
 ```go
 type DisconnectError struct {
-    Phase  ConnectionPhase
-    Reason DisconnectReason
-    Info   string
+    Cause error
 }
 ```
 
-Wraps `ErrDisconnected`.
+Unwraps to both `ErrDisconnected` and `Cause`. Mid-TSDU it is joined with
+`ErrIncompleteTSDU`.
 
 ---
 
@@ -105,7 +110,7 @@ Wraps `ErrDisconnected`.
 ```go
 const (
     PhaseHandshake ConnectionPhase = iota
-    PhaseOpenState
+    PhaseDataTransfer
 )
 ```
 
@@ -139,13 +144,15 @@ if err != nil {
 _, err = conn.ReadTSDU(ctx)
 if err != nil {
     switch {
+    case errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, cotp.ErrClosed):
+        // nothing was read; the connection is still open — retry or move on
     case errors.Is(err, cotp.ErrClosed):
-        // local Close was called
+        // local Close, or aborted after I/O
     case errors.Is(err, cotp.ErrDisconnected):
         // peer went away
         var de *cotp.DisconnectError
         if errors.As(err, &de) {
-            log.Printf("disconnect reason=%v", de.Reason)
+            log.Printf("disconnect cause=%v", de.Cause)
         }
     }
 }

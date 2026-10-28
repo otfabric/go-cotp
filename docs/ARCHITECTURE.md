@@ -272,7 +272,7 @@ client, err := mms.NewClient(association, mmsConfig)
 | Core COTP engine input | Existing `net.Conn` / duplex stream |
 | TLS config, trust, hostname verify, client certs | Consumer — TLS sits **TCP → TLS → TPKT → COTP** |
 | Operation context / policy | Consumer |
-| Read/write deadlines on the stream while COTP owns it | go-cotp |
+| Read/write deadlines on the stream while COTP owns it (per direction: read ops use `SetReadDeadline`, write ops `SetWriteDeadline`) | go-cotp |
 | TPKT | Context-agnostic `io.Reader` / `io.Writer` |
 
 Once a `net.Conn` is passed to go-cotp, **COTP has exclusive ownership** of protocol I/O. Upper libraries must not concurrently read, write, set deadlines, or frame packets on that connection.

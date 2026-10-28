@@ -342,7 +342,7 @@ func TestTSDU_LocalCloseUnblocksRead(t *testing.T) {
 
 func TestTSDU_ContextTimeoutAfterIOAborts(t *testing.T) {
 	cli, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
 	errCh := make(chan error, 1)
@@ -350,23 +350,47 @@ func TestTSDU_ContextTimeoutAfterIOAborts(t *testing.T) {
 		_, err := srv.ReadTSDU(ctx)
 		errCh <- err
 	}()
+	// One non-EOT segment, then silence: the deadline fires mid-TSDU.
+	if err := cli.writer.WritePacket(mustMarshal(t, &DT{EOT: false, UserData: []byte{1}})); err != nil {
+		t.Fatal(err)
+	}
 
 	select {
 	case err := <-errCh:
-		if !errors.Is(err, ErrClosed) {
-			t.Fatalf("err = %v, want ErrClosed", err)
-		}
-		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
-			// deadline from armDeadline / timeout
-			t.Logf("err = %v (acceptable if wrapped as ErrClosed from deadline)", err)
+		if !errors.Is(err, ErrClosed) || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("err = %v, want ErrClosed + DeadlineExceeded", err)
 		}
 		if srv.terminalKind() == terminalNone {
-			t.Fatal("connection must be aborted after I/O-started timeout")
+			t.Fatal("connection must be aborted after a mid-TSDU timeout")
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("ReadTSDU did not return")
 	}
 	_ = cli.Close()
+}
+
+func TestTSDU_IdleContextTimeoutKeepsOpen(t *testing.T) {
+	_, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	_, err := srv.ReadTSDU(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrClosed) {
+		t.Fatalf("ReadTSDU = %v, want bare DeadlineExceeded", err)
+	}
+	if srv.terminalKind() != terminalNone {
+		t.Fatal("idle timeout must not abort")
+	}
+
+	wctx, wcancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer wcancel()
+	// net.Pipe has no buffer and the peer is not reading: nothing moves.
+	err = srv.WriteTSDU(wctx, []byte{1})
+	if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrClosed) {
+		t.Fatalf("WriteTSDU = %v, want bare DeadlineExceeded", err)
+	}
+	if srv.terminalKind() != terminalNone {
+		t.Fatal("idle write timeout must not abort")
+	}
 }
 
 func TestTSDU_FirstTerminalCauseStable(t *testing.T) {

@@ -8,7 +8,6 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/otfabric/go-tpkt"
 )
@@ -38,8 +37,20 @@ type Conn struct {
 	reader *tpkt.Reader
 	writer *tpkt.Writer
 
-	readMu  sync.Mutex
-	writeMu sync.Mutex
+	// readMu and writeMu serialize each direction for a whole TSDU, so
+	// segments of different TSDUs never interleave. They are channel locks
+	// so that a caller queued behind a long transfer still honours its ctx.
+	readMu  opLock
+	writeMu opLock
+
+	// readDeadline and writeDeadline apply a TSDU operation's context to
+	// its own direction only.
+	readDeadline  *directionDeadline
+	writeDeadline *directionDeadline
+
+	// metered counts octets per direction; nil when raw is not a
+	// *meteredConn (some unit tests), in which case progress is unknown.
+	metered *meteredConn
 
 	negotiated NegotiatedParameters
 	maxTSDU    int
@@ -79,7 +90,14 @@ func newOpenConn(
 		profile:    profile,
 		localRef:   localRef,
 		refs:       refs,
+		readMu:     newOpLock(),
+		writeMu:    newOpLock(),
 	}
+	if raw != nil {
+		c.readDeadline = newDirectionDeadline(raw.SetReadDeadline)
+		c.writeDeadline = newDirectionDeadline(raw.SetWriteDeadline)
+	}
+	c.metered, _ = raw.(*meteredConn)
 	c.state.Store(uint32(stateOpen))
 	return c
 }
@@ -176,40 +194,48 @@ func (c *Conn) abort(err error) error {
 	return c.terminalError()
 }
 
-// armDeadline sets the connection deadline from ctx. The returned clear function
-// must be called when the logical operation ends. If ctx is cancelled without a
-// deadline while waiters may be blocked, clear still restores the deadline.
-//
-// Protocol I/O is considered started once the caller invokes an underlying
-// Read/Write/ReadPacket/WritePacket after arming.
-func armDeadline(conn net.Conn, ctx context.Context) (clear func(), err error) {
+// opLock is a mutex whose Lock gives up when ctx is done.
+type opLock chan struct{}
+
+func newOpLock() opLock { return make(opLock, 1) }
+
+func (l opLock) lock(ctx context.Context) error {
+	select {
+	case l <- struct{}{}:
+		return nil
+	default:
+	}
+	select {
+	case l <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (l opLock) unlock() { <-l }
+
+// readProgress and writeProgress return the octets moved so far in each
+// direction, and false when that is not tracked.
+func (c *Conn) readProgress() (int64, bool) {
+	if c.metered == nil {
+		return 0, false
+	}
+	return c.metered.nRead.Load(), true
+}
+
+func (c *Conn) writeProgress() (int64, bool) {
+	if c.metered == nil {
+		return 0, false
+	}
+	return c.metered.nWritten.Load(), true
+}
+
+// armHandshake applies ctx to both directions of conn for the single-goroutine
+// connect/accept handshake, the only phase that uses conn.SetDeadline.
+func armHandshake(conn net.Conn, ctx context.Context) (disarm func(), err error) {
 	if conn == nil {
 		return func() {}, fmt.Errorf("%w", ErrInvalidConfig)
 	}
-	if err := ctx.Err(); err != nil {
-		return func() {}, err
-	}
-	var stopWatch chan struct{}
-	if deadline, ok := ctx.Deadline(); ok {
-		_ = conn.SetDeadline(deadline)
-	} else {
-		stopWatch = make(chan struct{})
-		go func() {
-			select {
-			case <-ctx.Done():
-				_ = conn.SetDeadline(time.Unix(1, 0))
-			case <-stopWatch:
-			}
-		}()
-	}
-	var once sync.Once
-	clear = func() {
-		once.Do(func() {
-			if stopWatch != nil {
-				close(stopWatch)
-			}
-			_ = conn.SetDeadline(time.Time{})
-		})
-	}
-	return clear, nil
+	return newDirectionDeadline(conn.SetDeadline).arm(ctx)
 }

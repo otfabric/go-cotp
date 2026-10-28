@@ -114,12 +114,23 @@ func TestLeak_TimeoutGoroutineExits(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
 	defer cancel()
 	_, err := srv.ReadTSDU(ctx)
-	if err == nil {
-		t.Fatal("expected timeout")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ReadTSDU = %v, want context.DeadlineExceeded", err)
 	}
-	// Subsequent ops must see a terminal connection (context expiry after I/O aborts).
-	if err2 := srv.WriteTSDU(context.Background(), []byte{1}); err2 == nil {
-		t.Fatal("write succeeded after deadline abort")
+	if errors.Is(err, cotp.ErrClosed) {
+		t.Fatalf("idle timeout must not abort: %v", err)
+	}
+	// No octet was consumed, so the connection stays usable both ways.
+	got := make(chan []byte, 1)
+	go func() {
+		b, _ := cli.ReadTSDU(context.Background())
+		got <- b
+	}()
+	if err := srv.WriteTSDU(context.Background(), []byte{1}); err != nil {
+		t.Fatalf("WriteTSDU after idle timeout: %v", err)
+	}
+	if b := <-got; len(b) != 1 || b[0] != 1 {
+		t.Fatalf("peer got %v", b)
 	}
 	_ = cli.Close()
 }

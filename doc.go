@@ -9,9 +9,12 @@
 //
 // Connect and Accept take ownership of the net.Conn immediately, perform the
 // Class 0 CR/CC handshake using go-tpkt internally, and return an open *Conn.
-// Consumers of *Conn must not use go-tpkt. One reader and one writer may run
-// concurrently; Close unblocks outstanding operations; a context that expires
-// after I/O has started aborts the connection.
+// Consumers of *Conn must not use go-tpkt. A *Conn is full duplex: a reader and
+// writers run concurrently, concurrent writers are serialized per TSDU, and each
+// operation's context bounds only its own direction (SetReadDeadline or
+// SetWriteDeadline). Close unblocks outstanding operations. A context that ends
+// an operation before any octet moved leaves the connection open; once octets
+// have moved, it aborts the connection.
 //
 // Codec API (tools / low-level): Decode / MarshalBinary on individual TPDU
 // payloads (no TPKT header). See docs/COMPLIANCE.md and docs/TP0_API_DESIGN.md.

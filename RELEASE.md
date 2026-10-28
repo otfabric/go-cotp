@@ -1,5 +1,81 @@
 # go-cotp Releases
 
+## v1.1.0
+
+**Date:** 2026-10-28
+**Previous release:** v1.0.4
+
+## Summary
+
+Full-duplex fix: reads and writes now use independent deadlines, so a `*Conn`
+can be read by one goroutine while others write — as MMS does — without one
+direction's context cutting, extending, or clearing the other's. Consumers
+that wrapped the stream to split deadlines themselves (go-mms
+`transport/iso` `splitDeadlineConn`) can drop that shim. No API additions;
+minor bump because timeout and error classification changed (see below).
+
+## Changes
+
+### Behaviour
+
+- **Per-direction deadlines.** `ReadTSDU` applies its context with
+  `SetReadDeadline` only and `WriteTSDU` with `SetWriteDeadline` only; each
+  restores its own direction to no deadline when it returns. Previously both
+  armed `SetDeadline` (both directions) and cleared it afterwards, so a write
+  with a short context could time out a concurrent read, and a finishing
+  read cleared a stalled write's deadline (and vice versa). Only the
+  `Connect`/`Accept` handshake still uses `SetDeadline`.
+- **Cancellation is race-free and honoured with a deadline too.** A context
+  cancelled right as an operation returned could leave a past deadline on the
+  stream and break every later operation; the cancellation callback is now
+  ordered against the operation's end. A context that has a deadline and is
+  cancelled early now interrupts the operation too (before, only contexts
+  without a deadline were watched).
+- **Context expiry before any octet moved is not fatal.** If a context ends
+  `ReadTSDU`/`WriteTSDU` before a single octet of the TSDU crossed the stream
+  (an idle read, a stalled first write), the call returns the bare
+  `ctx.Err()` and the connection stays open; the other direction is
+  untouched. Once octets have moved, the connection is still aborted with
+  `ErrClosed` + the context error, as before.
+- **Serialized callers honour their context while queued.** Concurrent
+  `WriteTSDU` calls are serialized for a whole TSDU (segments of different
+  TSDUs never interleave), as are concurrent `ReadTSDU` calls; a caller
+  waiting for its turn now returns `ctx.Err()` when its context ends, without
+  aborting the connection.
+- **Reset / broken pipe classify as `ErrDisconnected`.** A TCP reset, broken
+  pipe, stream closed underneath go-cotp, or EOF inside a packet now aborts
+  with a `*DisconnectError` carrying the cause (joined with
+  `ErrIncompleteTSDU` mid-TSDU), as `docs/TP0_API_DESIGN.md` specified.
+  Previously these returned the raw network error.
+
+### Tests
+
+- Full-duplex regressions (`duplex_test.go`): a reader survives a concurrent
+  write whose context expires, and the reverse; a completing write keeps the
+  reader's deadline, and the reverse; cancelled-right-after-return writes
+  never poison the stream; queued callers honour their context.
+- 16 parallel senders per side alongside one reader per side over `net.Pipe`
+  and TCP with multi-segment TSDUs, verified by per-TSDU CRC and per-sender
+  order (`-race`).
+- Chaos stream: short writes, short reads, jitter, and random resets.
+- `FuzzSegmentedRoundTrip`: fuzz-chosen TSDUs over fuzz-chosen stream
+  chunking.
+- Deadline controller unit tests, including a cancel/disarm race.
+
+### Documentation
+
+- README, API.md, doc.go, docs/TP0_API_DESIGN.md §7, docs/ARCHITECTURE.md:
+  concurrency and deadline rules updated.
+- ERRORS.md: typed error structs and `ConnectionPhase` constants corrected to
+  match the code; idle-timeout and disconnect classification documented.
+- Coverage gate raised to 90% (`make coverage-check`, CONTRIBUTING.md).
+
+### Dependencies
+
+- go-tpkt stays at v1.0.1: it is stateless and sets no deadlines.
+
+---
+
 ## v1.0.4
 
 **Date:** 2026-07-30

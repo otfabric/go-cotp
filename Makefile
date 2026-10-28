@@ -4,7 +4,7 @@ SHELL := /bin/bash
 GO   ?= go
 PKGS := .
 
-COVERAGE_MIN := 75
+COVERAGE_MIN := 90
 
 .PHONY: help test test-race test-short vet lint lint-ci fmt vuln fuzz fuzz-decode fuzz-parse bench tidy check check-full clean coverage coverage-html coverage-clean coverage-check
 
