@@ -401,7 +401,8 @@ open ──Close──► closing ──► closed
 | Peer orderly EOF | `ErrDisconnected` + `io.EOF` |
 | Peer reset / network failure | `ErrDisconnected` + underlying network error |
 | Local `Close()` waking blocked ops | `ErrClosed` (typically also `net.ErrClosed`); **not** `ErrDisconnected` |
-| Context expiry/cancel after I/O started | `ErrClosed` + `ctx.Err()` |
+| Context expiry/cancel after I/O started (an octet of the TSDU moved, §7.1) | `ErrClosed` + `ctx.Err()` |
+| Context expiry/cancel before any octet moved | bare `ctx.Err()`; Conn stays open |
 | EOF mid-TSDU reassembly | `ErrIncompleteTSDU` + `ErrDisconnected` + `io.EOF` |
 
 ---
@@ -882,7 +883,7 @@ Generic codec may still preserve unknown parameters for tooling (COMPLIANCE B-07
 1. Exclusive `net.Conn` ownership after `Connect`/`Accept` entry.
 2. Full duplex: one `ReadTSDU` and one `WriteTSDU` run concurrently. Concurrent `WriteTSDU` calls are serialized per TSDU (segments never interleave); concurrent `ReadTSDU` calls likewise.
 3. `Close` may run concurrently; universal unblock for both directions.
-4. Per-direction deadlines: `ReadTSDU` applies `ctx` with `SetReadDeadline` only and `WriteTSDU` with `SetWriteDeadline` only; each restores its direction to no deadline on return. Cancellation (no deadline) sets that direction's deadline to the past. Only the `Connect`/`Accept` handshake uses `SetDeadline`.
+4. Per-direction deadlines: `ReadTSDU` applies `ctx` with `SetReadDeadline` only and `WriteTSDU` with `SetWriteDeadline` only; each restores its direction to no deadline on return. Cancellation (with or without a deadline) sets that direction's deadline to the past. Only the `Connect`/`Accept` handshake uses `SetDeadline`.
 
 ### 7.1 When protocol I/O has “started”
 
