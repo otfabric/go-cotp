@@ -45,20 +45,21 @@ func Accept(ctx context.Context, conn net.Conn, cfg ServerConfig) (*Conn, error)
 		return nil, err
 	}
 
-	reader, err := tpkt.NewReader(conn, tpkt.ReaderConfig{})
+	stream := newMeteredConn(conn)
+	reader, err := tpkt.NewReader(stream, tpkt.ReaderConfig{})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 	}
-	writer, err := tpkt.NewWriter(conn)
+	writer, err := tpkt.NewWriter(stream)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 	}
 
-	clear, err := armDeadline(conn, ctx)
+	disarm, err := armHandshake(conn, ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer clear()
+	defer disarm()
 
 	payload, err := reader.ReadPacket()
 	if err != nil {
@@ -193,7 +194,7 @@ func Accept(ctx context.Context, conn net.Conn, cfg ServerConfig) (*Conn, error)
 		PeerConnectData: copyBytes(cr.UserData),
 	}
 
-	c := newOpenConn(conn, reader, writer, neg, maxTSDU, cfg.SizeProfile, localRef, refs)
+	c := newOpenConn(stream, reader, writer, neg, maxTSDU, cfg.SizeProfile, localRef, refs)
 	refHeld = false
 	success = true
 	return c, nil

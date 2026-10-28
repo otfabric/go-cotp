@@ -40,11 +40,12 @@ func Connect(ctx context.Context, conn net.Conn, cfg ClientConfig) (*Conn, error
 		return nil, err
 	}
 
-	reader, err := tpkt.NewReader(conn, tpkt.ReaderConfig{})
+	stream := newMeteredConn(conn)
+	reader, err := tpkt.NewReader(stream, tpkt.ReaderConfig{})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 	}
-	writer, err := tpkt.NewWriter(conn)
+	writer, err := tpkt.NewWriter(stream)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 	}
@@ -83,11 +84,11 @@ func Connect(ctx context.Context, conn net.Conn, cfg ClientConfig) (*Conn, error
 		return nil, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 	}
 
-	clear, err := armDeadline(conn, ctx)
+	disarm, err := armHandshake(conn, ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer clear()
+	defer disarm()
 
 	if err := writer.WritePacket(crBytes); err != nil {
 		return nil, connectIOError(ctx, err)
@@ -158,7 +159,7 @@ func Connect(ctx context.Context, conn net.Conn, cfg ClientConfig) (*Conn, error
 		PeerConnectData: copyBytes(cc.UserData),
 	}
 
-	c := newOpenConn(conn, reader, writer, neg, maxTSDU, cfg.SizeProfile, localRef, refs)
+	c := newOpenConn(stream, reader, writer, neg, maxTSDU, cfg.SizeProfile, localRef, refs)
 	refHeld = false
 	success = true
 	return c, nil
@@ -184,11 +185,8 @@ func connectIOError(ctx context.Context, err error) error {
 	// conn.SetDeadline and context timers are independent: the TCP deadline can
 	// fire before ctx.Err() is set. Treat a timeout under a context deadline as
 	// DeadlineExceeded, matching open-state classifyIOPhase.
-	if _, ok := ctx.Deadline(); ok {
-		var netErr net.Error
-		if errors.As(err, &netErr) && netErr.Timeout() {
-			return fmt.Errorf("%w: %w", ErrClosed, context.DeadlineExceeded)
-		}
+	if _, ok := ctx.Deadline(); ok && isTimeout(err) {
+		return fmt.Errorf("%w: %w", ErrClosed, context.DeadlineExceeded)
 	}
 	if errors.Is(err, io.EOF) {
 		return &DisconnectError{Cause: io.EOF}

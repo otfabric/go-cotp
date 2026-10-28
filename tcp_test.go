@@ -209,12 +209,20 @@ func TestTCP_DeadlineCancelsRead(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected deadline/cancel error")
 	}
-	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, cotp.ErrClosed) {
-		t.Fatalf("err = %v", err)
+	if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, cotp.ErrClosed) {
+		t.Fatalf("err = %v, want bare context.DeadlineExceeded", err)
 	}
-	// Connection must be aborted after context-expired I/O.
-	if err2 := srv.WriteTSDU(context.Background(), []byte{1}); err2 == nil {
-		t.Fatal("write succeeded after deadline abort")
+	// Nothing was consumed: the connection stays open in both directions and
+	// the read deadline has been cleared.
+	if err := srv.WriteTSDU(context.Background(), []byte{1}); err != nil {
+		t.Fatalf("WriteTSDU after idle read timeout: %v", err)
+	}
+	if b, err := cli.ReadTSDU(context.Background()); err != nil || len(b) != 1 {
+		t.Fatalf("peer ReadTSDU = %v, %v", b, err)
+	}
+	go func() { _ = cli.WriteTSDU(context.Background(), []byte{2}) }()
+	if b, err := srv.ReadTSDU(context.Background()); err != nil || len(b) != 1 || b[0] != 2 {
+		t.Fatalf("ReadTSDU after idle timeout = %v, %v", b, err)
 	}
 }
 
