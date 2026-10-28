@@ -36,7 +36,7 @@ go get github.com/otfabric/go-cotp
 
 **Requires:** Go 1.23+
 
-The package lives at repo root so the import path is `github.com/otfabric/go-cotp` (same style as `github.com/otfabric/go-tpkt`). Package name is `cotp`. Framing dependency: `github.com/otfabric/go-tpkt` **v1.0.0+**.
+The package lives at repo root so the import path is `github.com/otfabric/go-cotp` (same style as `github.com/otfabric/go-tpkt`). Package name is `cotp`. Framing dependency: `github.com/otfabric/go-tpkt` (version pinned in `go.mod`).
 
 ## Project structure
 

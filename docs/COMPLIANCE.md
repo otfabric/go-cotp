@@ -1,8 +1,8 @@
 # go-cotp Standards Compliance
 
-**Status date:** 2026-07-16  
+**Status date:** 2026-10-28  
 **Module:** `github.com/otfabric/go-cotp`  
-**Framing dependency:** `github.com/otfabric/go-tpkt` v1.0.0  
+**Framing dependency:** `github.com/otfabric/go-tpkt` (version pinned in `go.mod`)  
 
 ## Safe compliance claim
 
@@ -133,7 +133,7 @@ Annex A state tables (X.224 Annex A): **not implemented**.
 | E-05 | Port 102 | RFC 1006 | Status / § | RFC normative | not applicable | Profile concern, not codec |
 | E-06 | Default max TPDU 65531 | RFC 1006 | TPKT length | RFC normative | **pass** (TP0) | `DefaultMaxTPDULength` / omitted-size path; see [TP0_API_DESIGN.md](TP0_API_DESIGN.md) |
 | E-07 | Expedited: modified ED ≈ DT | RFC 1006 | expedited notes | RFC normative | **unclear** / partial | Library ED follows X.224 13.8 shape (DST-REF + NR), not the RFC 1006 “ED looks like DT” experimental form |
-| E-08 | TCP close → disconnect | RFC 1006 | mapping | RFC normative | **pass** (TP0) | Peer TCP close → `ErrDisconnected`+EOF; local `Close` unblocks waiters; first terminal cause wins |
+| E-08 | TCP close → disconnect | RFC 1006 | mapping | RFC normative | **pass** (TP0) | Peer TCP close → `ErrDisconnected`+EOF; reset / broken pipe → `ErrDisconnected`+cause; local `Close` unblocks waiters; first terminal cause wins |
 | E-09 | Max TSDU 65524 for TPDU 65531 | RFC 1006 | body | RFC normative | **discrepancy** | Conflicts with X.224:1995 §13.7 Class 0 DT (TPDU − 3 → 65528 user octets **per DT segment**). No verified RFC 1006 erratum. **go-cotp TP0 uses X.224 for segmentation**; 65524 retained here only as a documented discrepancy. 65528 is max per-DT payload, not a max TSDU |
 | E-10 | Omitted CC size → local-capped negotiated max | RFC 1006 / 2126 / design | — | Implementation choice / installed-base compatibility | partial | Wired through client `Connect` via `interpretCCSize`; see [TP0_API_DESIGN.md](TP0_API_DESIGN.md) §5.6 |
 
@@ -251,7 +251,7 @@ Aligned with [ARCHITECTURE.md](ARCHITECTURE.md) migration sequence.
    - ~~Benchmarks (`bench_test.go`)~~
    - ~~CI closure-gates job (staticcheck, govulncheck, fuzz seeds)~~
    - ~~Local-replace spikes against go-s7comm / go-mms~~ (ran; see note below — not a green migration)
-   - ~~Consumer migration onto the TSDU API~~ (go-s7comm and go-mms both use go-cotp v1.0.4; go-tpkt is only indirect)
+   - ~~Consumer migration onto the TSDU API~~ (go-s7comm and go-mms both use the TSDU API, go-cotp ≥ v1.0.4; go-tpkt is only an indirect dependency of both)
    - Remaining: real PLC/MMS interoperability
 5. Expedited / RFC 1006 ED-as-DT remains out of P1 (see design non-goals).
 
