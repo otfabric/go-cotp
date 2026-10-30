@@ -6,7 +6,7 @@ Pure Go COTP/ISO 8073 TP0 transport and X.224 TPDU codec over RFC 1006 TPKT. Pro
 
 ## Organisation standards
 
-This repository follows **otfabric/engineering policy 1.0**, profile **foundational-transport** (`.otfabric/policy.yaml`, mode `baseline`). Where this file and the organisation standards disagree, this file wins here — say so in your report.
+This repository follows **otfabric/engineering policy 1.1**, profile **foundational-transport** (`.otfabric/policy.yaml`, mode `enforce`). Where this file and the organisation standards disagree, this file wins here — say so in your report.
 
 ## Where the truth lives
 
