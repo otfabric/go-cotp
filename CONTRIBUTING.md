@@ -19,6 +19,8 @@ go mod download
 - **Coverage**: `make coverage` for a report; `make coverage-check` to enforce minimum 90% coverage.
 - **Fuzz**: `make fuzz` (or `fuzz-decode` / `fuzz-parse`) to run fuzz targets.
 
+See [TESTING.md](TESTING.md) for all tiers.
+
 ## Code style and linting
 
 - Format code: run `gofmt` (or your editor’s “format on save”) on modified files; `make fmt` to format the tree.

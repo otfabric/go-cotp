@@ -54,7 +54,10 @@ go-cotp/
 │   ├── unit/          Per-type golden hex
 │   └── captures/      Sanitized wire captures
 ├── API.md             Public API reference
+├── ARCHITECTURE.md    How the package is built
 ├── ERRORS.md          Error taxonomy
+├── LIMITATIONS.md     Not implemented, not verified
+├── TESTING.md         Test tiers and coverage policy
 ├── RELEASE.md         Release history
 ├── CONTRIBUTING.md    Contribution / test guidance
 └── SECURITY.md        Vulnerability reporting
@@ -183,7 +186,10 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the ownership matrix.
 
 - [API.md](API.md) — Public API reference: functions, structs, constants, and errors.
 - [ERRORS.md](ERRORS.md) — Error taxonomy: sentinel values, typed errors, and usage patterns.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — How the package is built: layers, lifecycle, concurrency.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — Target stack service boundaries and dependency rules.
+- [TESTING.md](TESTING.md) — Test tiers, coverage policy, fuzz regressions.
+- [LIMITATIONS.md](LIMITATIONS.md) — What is not implemented or not verified.
 - [docs/COMPLIANCE.md](docs/COMPLIANCE.md) — Standards compliance matrix and gap roadmap.
 - [RELEASE.md](RELEASE.md) — Release notes.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — How to contribute, run tests, and submit changes.
