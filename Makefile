@@ -5,8 +5,9 @@ GO   ?= go
 PKGS := .
 
 COVERAGE_MIN := 90
+FUZZTIME ?= 5s
 
-.PHONY: help test test-race test-short vet lint lint-ci fmt vuln fuzz fuzz-decode fuzz-parse bench tidy check check-full clean coverage coverage-html coverage-clean coverage-check
+.PHONY: help test test-race test-short vet lint lint-ci fmt vuln fuzz fuzz-decode fuzz-parse bench tidy check check-full clean coverage coverage-html coverage-clean coverage-check cross
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_.-]+:.*## / {printf "%-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -61,19 +62,26 @@ coverage-check: ## Run tests and fail if coverage is below $(COVERAGE_MIN)%%
 	$(GO) test -coverprofile=coverage.out $(PKGS)
 	@go tool cover -func=coverage.out | grep 'total:' | awk -v min=$(COVERAGE_MIN) '{gsub(/%/,""); p=$$NF+0; if (p < min) { printf "Coverage %.1f%% is below %d%%\n", p, min; exit 1 } else { printf "Coverage %.1f%% (>= %d%%)\n", p, min } }'
 
-fuzz: ## Run short fuzz tests (Decode + parse)
-	@echo "Running fuzz tests..."
-	$(GO) test -fuzz=FuzzDecode -fuzztime=5s $(PKGS)
-	$(GO) test -fuzz=FuzzParseVariablePart -fuzztime=5s $(PKGS)
+fuzz: ## Run every Fuzz target for FUZZTIME (targets discovered, never listed)
+	@for t in $$($(GO) test -list '^Fuzz' $(PKGS) | grep '^Fuzz'); do \
+		echo "fuzz $$t"; \
+		$(GO) test -run '^$$' -fuzz "^$$t$$" -fuzztime $(FUZZTIME) $(PKGS) || exit 1; \
+	done
 
 fuzz-decode: ## Run Decode fuzz target
 	@echo "Running Decode fuzz target..."
-	$(GO) test -fuzz=FuzzDecode -fuzztime=10s $(PKGS)
+	$(GO) test -run '^$$' -fuzz '^FuzzDecode$$' -fuzztime=10s $(PKGS)
 
 fuzz-parse: ## Run parse fuzz targets
 	@echo "Running parse fuzz targets..."
-	$(GO) test -fuzz=FuzzParseVariablePart -fuzztime=10s $(PKGS)
-	$(GO) test -fuzz=FuzzParseCRCCVariablePart -fuzztime=10s $(PKGS)
+	$(GO) test -run '^$$' -fuzz '^FuzzParseVariablePart$$' -fuzztime=10s $(PKGS)
+	$(GO) test -run '^$$' -fuzz '^FuzzParseCRCCVariablePart$$' -fuzztime=10s $(PKGS)
+
+cross: ## Cross-compile without cgo for supported platforms
+	@for p in linux/amd64 linux/arm64 linux/arm darwin/arm64 windows/amd64; do \
+		echo "build $$p"; \
+		CGO_ENABLED=0 GOOS=$${p%/*} GOARCH=$${p#*/} $(GO) build $(PKGS) || exit 1; \
+	done
 
 bench: ## Run benchmarks
 	@echo "Running benchmarks..."
