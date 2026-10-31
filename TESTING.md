@@ -9,16 +9,19 @@ All tests are in the root package and need no network beyond loopback, no Docker
 | Unit and service | `make test` | Codec, negotiation, handshake, TSDU and open-state tests |
 | Short | `make test-short` | The same with `-short` (no test currently shortens itself) |
 | Race | `make test-race` | The same with the race detector |
-| Coverage | `make coverage-check` | Fails below 90% |
+| Coverage | `make coverage-check`, `make coverage-pkg-check` | Fails below 90% in total, below 92% for the package |
+| Chaos | `go test -race -run Chaos .` | `TestDuplex_Chaos*`; `COTP_CHAOS_SEEDS` raises the seed count (default 4 and 8) |
 | Fuzz | `make fuzz` | Every `Fuzz*` target for `FUZZTIME` (default 5s) |
 | Selected fuzz | `make fuzz-decode`, `make fuzz-parse` | `FuzzDecode`; the two parameter parsers |
 | Benchmarks | `make bench` | `bench_test.go` |
 | Cross-compile | `make cross` | Build only, without cgo; no test runs on these platforms |
-| Everything local | `make check` | Formats and tidies, then vet, staticcheck, golangci-lint, govulncheck, tests, race, coverage report |
+| Everything local | `make check` | Formats and tidies, then vet, staticcheck, golangci-lint, govulncheck, tests, race, coverage gates |
 
-`make lint`, `make lint-ci` and `make vuln` need `staticcheck`, `golangci-lint` and `govulncheck` on `PATH`. `make check` runs `make coverage`, which prints coverage but does not enforce the minimum; run `make coverage-check` as well.
+`make lint`, `make lint-ci` and `make vuln` need `staticcheck`, `golangci-lint` and `govulncheck` on `PATH`.
 
-CI (`.github/workflows/ci.yml`) runs the shared go-ci workflow on Go 1.23 to 1.26 with the race detector, coverage minimum 90, govulncheck and 10 seconds per fuzz target, and a `closure-gates` job: module verify, staticcheck and the fuzz seed corpus.
+CI (`.github/workflows/ci.yml`) runs the shared go-ci workflow on Go 1.23 to 1.26 with the race detector, coverage minimum 90, govulncheck and 10 seconds per fuzz target, a `package-coverage` job (`make coverage-pkg-check`), and a `closure-gates` job: module verify, staticcheck and the fuzz seed corpus.
+
+`.github/workflows/nightly.yml` runs every Fuzz target for 5 minutes and the chaos tests with 200 seeds under the race detector. A failing fuzz input is uploaded as an artifact.
 
 ## Where things are tested
 
@@ -39,7 +42,7 @@ All peers here are this package or a test-written raw peer: nothing in this repo
 
 ## Coverage policy
 
-The minimum is 90% of statements of the root package. It is set in `Makefile` (`COVERAGE_MIN`) and `.github/workflows/ci.yml` (`coverage-min`). Nothing is excluded: the module has one package.
+The minimum is 90% of statements of the root package. It is set in `Makefile` (`COVERAGE_MIN`) and `.github/workflows/ci.yml` (`coverage-min`). The per-package floor is 92% (`COVER_PKG_MIN`), just below the 93.3% measured when it was set. Nothing is excluded: the module has one package.
 
 ## Fuzz regressions
 
