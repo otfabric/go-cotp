@@ -16,8 +16,7 @@ func TestCapturesDecode(t *testing.T) {
 	dir := filepath.Join("testdata", "captures")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Skipf("captures dir not found: %v", err)
-		return
+		t.Fatalf("captures dir: %v", err)
 	}
 	var decoded int
 	for _, e := range entries {
@@ -62,8 +61,7 @@ func TestGoldenCRCC(t *testing.T) {
 			path := filepath.Join("testdata", "unit", tt.file)
 			raw, err := os.ReadFile(path)
 			if err != nil {
-				t.Skipf("missing fixture: %v", err)
-				return
+				t.Fatalf("missing fixture: %v", err)
 			}
 			b, err := hex.DecodeString(strings.ReplaceAll(strings.TrimSpace(string(raw)), " ", ""))
 			if err != nil {
@@ -100,8 +98,7 @@ func TestGoldenAll(t *testing.T) {
 			path := filepath.Join("testdata", "unit", tt.file)
 			raw, err := os.ReadFile(path)
 			if err != nil {
-				t.Skipf("missing fixture: %v", err)
-				return
+				t.Fatalf("missing fixture: %v", err)
 			}
 			b, err := hex.DecodeString(strings.ReplaceAll(strings.TrimSpace(string(raw)), " ", ""))
 			if err != nil {

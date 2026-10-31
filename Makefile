@@ -1,13 +1,19 @@
 # go-cotp — X.224 / COTP TPDU library (package at repo root)
 
 SHELL := /bin/bash
+
+# A parent go.work must not change this module's dependencies.
+export GOWORK := off
+
 GO   ?= go
 PKGS := .
 
 COVERAGE_MIN := 90
+# Per-package floor (TEST-012). The module has one package, at 93.3 % when set.
+COVER_PKG_MIN := 92
 FUZZTIME ?= 5s
 
-.PHONY: help test test-race test-short vet lint lint-ci fmt vuln fuzz fuzz-decode fuzz-parse bench tidy check check-full clean coverage coverage-html coverage-clean coverage-check cross
+.PHONY: help test test-race test-short vet lint lint-ci fmt vuln fuzz fuzz-decode fuzz-parse bench tidy check check-full clean coverage coverage-html coverage-clean coverage-check coverage-pkg-check cross
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_.-]+:.*## / {printf "%-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -62,6 +68,11 @@ coverage-check: ## Run tests and fail if coverage is below $(COVERAGE_MIN)%%
 	$(GO) test -coverprofile=coverage.out $(PKGS)
 	@go tool cover -func=coverage.out | grep 'total:' | awk -v min=$(COVERAGE_MIN) '{gsub(/%/,""); p=$$NF+0; if (p < min) { printf "Coverage %.1f%% is below %d%%\n", p, min; exit 1 } else { printf "Coverage %.1f%% (>= %d%%)\n", p, min } }'
 
+coverage-pkg-check: coverage ## Fail when a package is below COVER_PKG_MIN
+	@awk -v m="$(COVER_PKG_MIN)" 'NR > 1 { n[$$1] = $$2; if ($$3 > 0) h[$$1] = 1 } \
+	END { for (k in n) { p = k; sub(/\/[^\/]*$$/, "", p); s[p] += n[k]; if (k in h) c[p] += n[k] } \
+	for (p in s) { v = 100 * c[p] / s[p]; if (v < m) { printf "%s: %.1f%% < %s%%\n", p, v, m; bad = 1 } } exit bad }' coverage.out
+
 fuzz: ## Run every Fuzz target for FUZZTIME (targets discovered, never listed)
 	@for t in $$($(GO) test -list '^Fuzz' $(PKGS) | grep '^Fuzz'); do \
 		echo "fuzz $$t"; \
@@ -91,7 +102,7 @@ tidy: ## Tidy module files
 	@echo "Tidying module files..."
 	$(GO) mod tidy
 
-check: fmt tidy vet lint lint-ci vuln test test-race coverage ## Run core release checks
+check: fmt tidy vet lint lint-ci vuln test test-race coverage-check coverage-pkg-check ## Run core release checks
 	@echo "Check done."
 
 check-full: check ## Alias for check

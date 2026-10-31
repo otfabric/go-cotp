@@ -11,6 +11,8 @@ import (
 	"hash/crc32"
 	"math/rand"
 	"net"
+	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -514,10 +516,19 @@ func openChaosPair(t *testing.T, seed int64, resetAt int64) (client, server *Con
 	return client, server
 }
 
+// chaosSeeds is the number of seeds of a chaos test: def, or the value of
+// COTP_CHAOS_SEEDS, which the nightly workflow raises.
+func chaosSeeds(def int64) int64 {
+	if n, err := strconv.ParseInt(os.Getenv("COTP_CHAOS_SEEDS"), 10, 64); err == nil && n > 0 {
+		return n
+	}
+	return def
+}
+
 // Partial writes, short reads, and jitter never corrupt or interleave TSDUs.
 func TestDuplex_ChaosPartialIO(t *testing.T) {
 	t.Parallel()
-	for seed := int64(1); seed <= 4; seed++ {
+	for seed := int64(1); seed <= chaosSeeds(4); seed++ {
 		t.Run(fmt.Sprint("seed", seed), func(t *testing.T) {
 			t.Parallel()
 			cli, srv := openChaosPair(t, seed, 0)
@@ -575,7 +586,7 @@ func TestDuplex_ChaosPartialIO(t *testing.T) {
 // classified error: no hang, no panic, no corrupted TSDU delivered.
 func TestDuplex_ChaosReset(t *testing.T) {
 	t.Parallel()
-	for seed := int64(1); seed <= 8; seed++ {
+	for seed := int64(1); seed <= chaosSeeds(8); seed++ {
 		t.Run(fmt.Sprint("seed", seed), func(t *testing.T) {
 			t.Parallel()
 			cli, srv := openChaosPair(t, seed, 200+seed*97)
