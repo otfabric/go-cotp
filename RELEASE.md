@@ -1,5 +1,17 @@
 # go-cotp Releases
 
+## v1.1.1
+
+**Date:** 2026-10-31
+**Previous release:** v1.1.0
+
+### Changed
+
+- Policy 1.2: build output in `bin/` and `release/`, a per-package coverage floor, and more tests and CI. No change in behaviour.
+- Built on go-tpkt v1.0.2.
+
+---
+
 ## v1.1.0
 
 **Date:** 2026-10-28
