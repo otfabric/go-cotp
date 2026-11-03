@@ -191,5 +191,21 @@ func connectIOError(ctx context.Context, err error) error {
 	if errors.Is(err, io.EOF) {
 		return &DisconnectError{Cause: io.EOF}
 	}
+	if isFramingError(err) {
+		return fmt.Errorf("%w: %w", ErrHandshake, err)
+	}
 	return err
+}
+
+// isFramingError reports whether err is a TPKT framing violation by the peer
+// (bad version, bad or oversized packet length), as opposed to a failure of
+// the stream itself.
+func isFramingError(err error) bool {
+	return errors.Is(err, tpkt.ErrInvalidVersion) ||
+		errors.Is(err, tpkt.ErrInvalidPacketLength) ||
+		errors.Is(err, tpkt.ErrPacketTooLarge) ||
+		errors.Is(err, tpkt.ErrPayloadTooShort) ||
+		errors.Is(err, tpkt.ErrPayloadTooLarge) ||
+		errors.Is(err, tpkt.ErrLengthMismatch) ||
+		errors.Is(err, tpkt.ErrTooShort)
 }

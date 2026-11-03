@@ -46,13 +46,9 @@ func (d *DT) MarshalBinary() ([]byte, error) {
 	}
 
 	// Variable part from Parameters
-	var varPart []byte
-	for _, p := range d.Parameters {
-		if len(p.Value) > 255 {
-			return nil, fmt.Errorf("marshal DT: parameter 0x%02x value length %d: %w", p.Code, len(p.Value), ErrUnexpectedParameterLength)
-		}
-		varPart = append(varPart, p.Code, byte(len(p.Value)))
-		varPart = append(varPart, p.Value...)
+	varPart, err := encodeVariablePart(d.Parameters)
+	if err != nil {
+		return nil, fmt.Errorf("marshal DT: %w", err)
 	}
 
 	li += len(varPart)

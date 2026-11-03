@@ -249,6 +249,10 @@ func (c *Conn) classifyIOPhase(ctx context.Context, err error, midTSDU bool) err
 		}
 		return c.abort(&DisconnectError{Cause: err})
 	}
+	if isFramingError(err) {
+		// A protocol violation by the peer, reported like a malformed DT.
+		return c.abortOpen(midTSDU, fmt.Errorf("%w: %w", ErrHandshake, err))
+	}
 	if midTSDU {
 		return c.abort(errors.Join(ErrIncompleteTSDU, &DisconnectError{Cause: err}))
 	}
