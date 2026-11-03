@@ -63,10 +63,7 @@ func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error {
 
 	start, tracked := c.writeProgress()
 	for offset := 0; offset < len(tsdu); {
-		end := offset + maxSeg
-		if end > len(tsdu) {
-			end = len(tsdu)
-		}
+		end := min(offset+maxSeg, len(tsdu))
 		chunk := tsdu[offset:end]
 		eot := end == len(tsdu)
 		payload, err := (&DT{EOT: eot, UserData: chunk}).MarshalBinary()

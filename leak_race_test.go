@@ -155,7 +155,7 @@ func TestLeak_CallbackBlockedPeerCloses(t *testing.T) {
 
 	// Valid CR so Accept enters OnConnect; peer closes while callback is blocked.
 	go func() {
-		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{SourceRef: 9, TPDUSize: u8(0x0A)}))
+		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{SourceRef: 9, TPDUSize: new(uint8(0x0A))}))
 		<-entered
 		_ = c1.Close()
 		close(release)
@@ -212,7 +212,7 @@ func TestLeak_ReadFailureRacesLocalClose(t *testing.T) {
 
 func TestLeak_NoPipeGoroutineHangOnHandshakeFail(t *testing.T) {
 	// Rapid failed handshakes should not leave blocked peer goroutines.
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		c1, c2 := net.Pipe()
 		done := make(chan struct{})
 		go func() {

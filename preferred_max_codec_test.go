@@ -119,7 +119,7 @@ func TestCRCCPreferredMaxRoundTrip(t *testing.T) {
 	cr := &CR{
 		SourceRef:            1,
 		PreferredMaxTPDUSize: &units,
-		TPDUSize:             bytePtr(0x0A),
+		TPDUSize:             new(byte(0x0A)),
 	}
 	raw, err := cr.MarshalBinary()
 	if err != nil {

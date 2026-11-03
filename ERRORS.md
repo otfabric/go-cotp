@@ -29,7 +29,7 @@ similar codec functions. All are defined in `errors.go` and can be imported as
 | `ErrNilReceiver` | `MarshalBinary` called on nil `*CR` / `*CC` / etc. |
 | `ErrMissingRequiredField` | Required encode field is missing or invalid |
 | `ErrInvalidConfig` | TP0/ITOT service configuration is invalid |
-| `ErrHandshake` | TP0 CR/CC handshake or open-state protocol validation failed |
+| `ErrHandshake` | TP0 CR/CC handshake or open-state protocol validation failed, including a TPKT framing violation by the peer (the go-tpkt sentinel, e.g. `tpkt.ErrInvalidVersion`, stays matchable) |
 
 ---
 
@@ -45,7 +45,7 @@ These are returned by `Connect`, `Accept`, `ReadTSDU`, and `WriteTSDU`.
 | `ErrDisconnected` | The stream went away: peer EOF, TCP reset, broken pipe, or EOF inside a packet; not a local Close |
 | `ErrConnectionRefused` | Peer sent a DR during the handshake |
 | `ErrUnexpectedTPDU` | Received a TPDU that is not legal in the current phase |
-| `ErrIncompleteTSDU` | EOF or connection abort while reassembling a multi-DT TSDU |
+| `ErrIncompleteTSDU` | EOF or connection abort while reassembling a multi-DT TSDU, or a protocol violation mid-TSDU (then joined with `ErrHandshake`) |
 
 A context that ends `ReadTSDU` / `WriteTSDU` **before any octet** of the TSDU
 crossed the stream (an idle read, a stalled first write, or waiting for another

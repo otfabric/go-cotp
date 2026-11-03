@@ -119,7 +119,7 @@ func TestChaos_CorruptedOpenStream(t *testing.T) {
 			srv, peer := acceptRawPeer(t)
 
 			go func() {
-				defer peer.Close()
+				defer func() { _ = peer.Close() }()
 				w, _ := tpkt.NewWriter(peer)
 				for _, f := range frames {
 					var err error
@@ -231,7 +231,7 @@ func TestFramingErrorClassification(t *testing.T) {
 func TestFramingErrorDuringHandshake(t *testing.T) {
 	t.Run("connect", func(t *testing.T) {
 		c1, c2 := net.Pipe()
-		defer c2.Close()
+		defer func() { _ = c2.Close() }()
 		go func() {
 			r, _ := tpkt.NewReader(c2, tpkt.ReaderConfig{})
 			if _, err := r.ReadPacket(); err != nil {
@@ -246,7 +246,7 @@ func TestFramingErrorDuringHandshake(t *testing.T) {
 	})
 	t.Run("accept", func(t *testing.T) {
 		c1, c2 := net.Pipe()
-		defer c1.Close()
+		defer func() { _ = c1.Close() }()
 		go func() { _, _ = c1.Write([]byte{0x03, 0x00, 0x00, 0x02}) }()
 		_, err := Accept(context.Background(), c2, ServerConfig{})
 		if !errors.Is(err, ErrHandshake) || !errors.Is(err, tpkt.ErrInvalidPacketLength) {

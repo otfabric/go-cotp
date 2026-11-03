@@ -19,7 +19,7 @@ All tests are in the root package and need no network beyond loopback, no Docker
 
 `make lint`, `make lint-ci` and `make vuln` need `staticcheck`, `golangci-lint` and `govulncheck` on `PATH`.
 
-CI (`.github/workflows/ci.yml`) runs the shared go-ci workflow on Go 1.23 to 1.26 with the race detector, coverage minimum 90, govulncheck and 10 seconds per fuzz target, a `package-coverage` job (`make coverage-pkg-check`), and a `closure-gates` job: module verify, staticcheck and the fuzz seed corpus.
+CI (`.github/workflows/ci.yml`) runs the shared go-ci workflow on Go 1.26 and 1.27 with the race detector, coverage minimum 90, govulncheck and 10 seconds per fuzz target, a `package-coverage` job (`make coverage-pkg-check`), and a `closure-gates` job: module verify, staticcheck and the fuzz seed corpus.
 
 `.github/workflows/nightly.yml` runs every Fuzz target for 5 minutes and the chaos tests with 200 seeds under the race detector. A failing fuzz input is uploaded as an artifact.
 

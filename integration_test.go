@@ -139,7 +139,7 @@ func TestIntegration_MultipleSequentialTSDUs(t *testing.T) {
 		cotp.ClientConfig{MaxTPDULength: 1024},
 		cotp.ServerConfig{MaxTPDULength: 1024},
 	)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		want := []byte{byte(i), 0xAA, 0xBB}
 		errCh := make(chan error, 1)
 		var got []byte

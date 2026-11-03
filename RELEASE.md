@@ -1,5 +1,26 @@
 # go-cotp Releases
 
+## v1.2.0
+
+**Date:** 2026-11-03
+**Previous release:** v1.1.1
+
+### Changed
+
+- **Go 1.26 is now the minimum** (`go 1.26` in `go.mod`, was 1.23). CI tests Go 1.26 and 1.27. Built on go-tpkt v1.1.0, which has the same minimum.
+- **Error classification:** a TPKT framing violation by the peer (invalid version or packet length) now matches `ErrHandshake`, during the handshake (`Connect`, `Accept`) and in the open state (`ReadTSDU`), and still matches the go-tpkt sentinel. Before, it came back as a bare go-tpkt error at a TSDU boundary and in the handshake, and mid-TSDU as `ErrIncompleteTSDU` joined with `ErrDisconnected`. Mid-TSDU it now matches `ErrIncompleteTSDU` and `ErrHandshake`, not `ErrDisconnected`: the stream did not go away, the peer broke the framing.
+- All encoders write parameters through one helper whose length check gosec can see (G115); `encodePreferredMaxUnits` and the preferred-size selection no longer narrow integers without a visible bound. Behaviour and error text are unchanged.
+- `go fix ./...` applied (`min`, `range` over integers, `new(expr)`, `sync.WaitGroup.Go`).
+
+### Tests
+
+- Encoder length bounds for every TPDU type and the CR/CC selectors, preferred-maximum encoding at each octet boundary, size selection with very large inputs.
+- New fuzz targets `FuzzMarshalParameters` and `FuzzEncodePreferredMaxUnits`.
+- `TestChaos_CorruptedOpenStream`: a peer that flips, truncates or extends DT TPDUs, or writes octets outside TPKT, after the handshake; every TSDU before the first corruption arrives intact, the reader ends with a classified error and the connection stays failed. Seeds follow `COTP_CHAOS_SEEDS` like the other chaos tests.
+- Framing classification tests for the handshake and the open state.
+
+---
+
 ## v1.1.1
 
 **Date:** 2026-10-31

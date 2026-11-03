@@ -19,7 +19,7 @@ jobs:
       coverage-min: "90"
       fuzz-time: 10s
       codecov-name: go-cotp
-      go-versions: '["1.23","1.24","1.25","1.26"]'
+      go-versions: '["1.26","1.27"]'
     secrets: inherit
 
   # Per-package floor (TEST-012). go-ci enforces the total only.
@@ -42,7 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # Tooling job: use a current Go so @latest analyzers that require newer
-      # toolchains can install. Module minimum remains go.mod (1.23).
+      # toolchains can install. Module minimum remains go.mod (1.26).
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26'

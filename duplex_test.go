@@ -123,7 +123,7 @@ func TestDuplex_ReadSurvivesCancelledWrites(t *testing.T) {
 	peerDone := make(chan error, 1)
 	const n = 200
 	go func() {
-		for i := 0; i < n; i++ {
+		for range n {
 			if _, err := cli.ReadTSDU(context.Background()); err != nil {
 				peerDone <- err
 				return
@@ -131,7 +131,7 @@ func TestDuplex_ReadSurvivesCancelledWrites(t *testing.T) {
 		}
 		peerDone <- nil
 	}()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		err := srv.WriteTSDU(ctx, []byte{byte(i)})
 		cancel()
@@ -371,7 +371,7 @@ func TestDuplex_ParallelSendersOneReader(t *testing.T) {
 				done := make(chan error, 1)
 				go func() {
 					next := make(map[int]int)
-					for i := 0; i < want; i++ {
+					for i := range want {
 						b, err := c.ReadTSDU(context.Background())
 						if err != nil {
 							done <- fmt.Errorf("ReadTSDU %d: %w", i, err)
@@ -396,12 +396,12 @@ func TestDuplex_ParallelSendersOneReader(t *testing.T) {
 				done := make(chan error, 1)
 				var wg sync.WaitGroup
 				var failed atomic.Value
-				for s := 0; s < senders; s++ {
+				for s := range senders {
 					wg.Add(1)
 					go func(s int) {
 						defer wg.Done()
 						rng := rand.New(rand.NewSource(int64(s)))
-						for q := 0; q < perSend; q++ {
+						for q := range perSend {
 							ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 							err := c.WriteTSDU(ctx, encodeTagged(s, q, 1+rng.Intn(600)))
 							cancel()
@@ -455,10 +455,7 @@ type chaosConn struct {
 func (c *chaosConn) roll(n int) (chunk int, jitter time.Duration, reset bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	chunk = 1 + c.rng.Intn(c.maxChunk)
-	if chunk > n {
-		chunk = n
-	}
+	chunk = min(1+c.rng.Intn(c.maxChunk), n)
 	if c.rng.Intn(8) == 0 {
 		jitter = time.Duration(c.rng.Intn(300)) * time.Microsecond
 	}
@@ -534,11 +531,11 @@ func TestDuplex_ChaosPartialIO(t *testing.T) {
 			cli, srv := openChaosPair(t, seed, 0)
 			const senders, perSend = 4, 10
 			var wg sync.WaitGroup
-			for s := 0; s < senders; s++ {
+			for s := range senders {
 				wg.Add(1)
 				go func(s int) {
 					defer wg.Done()
-					for q := 0; q < perSend; q++ {
+					for q := range perSend {
 						if err := cli.WriteTSDU(context.Background(), encodeTagged(s, q, 1+(s*q*37)%400)); err != nil {
 							t.Errorf("WriteTSDU: %v", err)
 							return
@@ -548,7 +545,7 @@ func TestDuplex_ChaosPartialIO(t *testing.T) {
 			}
 			echo := make(chan error, 1)
 			go func() {
-				for i := 0; i < senders*perSend; i++ {
+				for range senders * perSend {
 					b, err := srv.ReadTSDU(context.Background())
 					if err != nil {
 						echo <- err
@@ -565,7 +562,7 @@ func TestDuplex_ChaosPartialIO(t *testing.T) {
 				}
 				echo <- nil
 			}()
-			for i := 0; i < senders*perSend; i++ {
+			for range senders * perSend {
 				b, err := cli.ReadTSDU(context.Background())
 				if err != nil {
 					t.Fatalf("ReadTSDU: %v", err)
@@ -592,9 +589,7 @@ func TestDuplex_ChaosReset(t *testing.T) {
 			cli, srv := openChaosPair(t, seed, 200+seed*97)
 			var wg sync.WaitGroup
 			run := func(f func() error) {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					for {
 						if err := f(); err != nil {
 							if !errors.Is(err, ErrClosed) && !errors.Is(err, ErrDisconnected) {
@@ -603,10 +598,9 @@ func TestDuplex_ChaosReset(t *testing.T) {
 							return
 						}
 					}
-				}()
+				})
 			}
 			for _, c := range []*Conn{cli, srv} {
-				c := c
 				run(func() error {
 					b, err := c.ReadTSDU(context.Background())
 					if err == nil {
@@ -616,7 +610,7 @@ func TestDuplex_ChaosReset(t *testing.T) {
 					}
 					return err
 				})
-				for s := 0; s < 3; s++ {
+				for s := range 3 {
 					s, q := s, 0
 					run(func() error {
 						q++

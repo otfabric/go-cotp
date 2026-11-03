@@ -113,7 +113,7 @@ func TestDirectionDeadline_CancelRaceNeverPoisons(t *testing.T) {
 	t.Parallel()
 	rec := &deadlineRecorder{}
 	d := newDirectionDeadline(rec.set)
-	for i := 0; i < 2000; i++ {
+	for i := range 2000 {
 		ctx, cancel := context.WithCancel(context.Background())
 		disarm, err := d.arm(ctx)
 		if err != nil {

@@ -56,6 +56,8 @@ func decodedParams(d Decoded) []Parameter {
 		return d.ED.Parameters
 	case TypeER:
 		return d.ER.Parameters
+	case TypeCR, TypeCC, TypeRJ:
+		return nil
 	}
 	return nil
 }
@@ -63,7 +65,7 @@ func decodedParams(d Decoded) []Parameter {
 // A parameter value longer than the one-octet length field is rejected by
 // every encoder instead of being written with a wrapped length.
 func TestMarshal_ParameterValueLengthBound(t *testing.T) {
-	for kind := uint8(0); kind < 7; kind++ {
+	for kind := range uint8(7) {
 		for _, n := range []int{256, 257, 511, 65536} {
 			typ, b, err := marshalWithParams(kind, []Parameter{{Code: 0x99, Value: make([]byte, n)}})
 			if !errors.Is(err, ErrUnexpectedParameterLength) {
