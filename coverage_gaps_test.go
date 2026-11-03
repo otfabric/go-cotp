@@ -15,11 +15,6 @@ import (
 	"time"
 )
 
-func gapU8(v uint8) *uint8    { return &v }
-func gapU16(v uint16) *uint16 { return &v }
-func gapU32(v uint32) *uint32 { return &v }
-func gapInt(v int) *int       { return &v }
-
 // gapRawConn returns an open Conn over one end of a net.Pipe with no TPKT
 // reader/writer, for exercising classification helpers that never do I/O.
 func gapRawConn(t *testing.T) (*Conn, net.Conn) {
@@ -349,11 +344,11 @@ func TestGapSelectSizeBranches(t *testing.T) {
 	}
 
 	// Dispatch through selectSize: preferred wins over standard.
-	sel, err = selectSize(sizeOffer{Standard: gapInt(1024), Preferred: gapInt(2048)}, 4096, 0, SizeProfilePreferredMaximum)
+	sel, err = selectSize(sizeOffer{Standard: new(1024), Preferred: new(2048)}, 4096, 0, SizeProfilePreferredMaximum)
 	if err != nil || sel.Path != sizePathPreferred || sel.Effective != 2048 {
 		t.Fatalf("selectSize preferred = %+v,%v", sel, err)
 	}
-	sel, err = selectSize(sizeOffer{Standard: gapInt(1024)}, 4096, 0, SizeProfileRFC1006Compat)
+	sel, err = selectSize(sizeOffer{Standard: new(1024)}, 4096, 0, SizeProfileRFC1006Compat)
 	if err != nil || sel.Path != sizePathStandard || sel.Effective != 1024 {
 		t.Fatalf("selectSize standard = %+v,%v", sel, err)
 	}
@@ -372,22 +367,22 @@ func TestGapInterpretCCSize(t *testing.T) {
 		wantErr error
 	}{
 		{"bad profile", sizeOffer{Omitted: true}, nil, nil, SizeProfile(7), 0, ErrInvalidConfig},
-		{"both params", sizeOffer{Standard: gapInt(1024)}, gapU8(0x0A), gapU32(8), compat, 0, ErrHandshake},
-		{"omitted under preferred", sizeOffer{Preferred: gapInt(1024)}, nil, nil, pref, 0, ErrHandshake},
-		{"compat omission uses proposal", sizeOffer{Standard: gapInt(1024)}, nil, nil, compat, 1024, nil},
-		{"compat omission capped", sizeOffer{Standard: gapInt(65536)}, nil, nil, compat, DefaultMaxTPDULength, nil},
+		{"both params", sizeOffer{Standard: new(1024)}, new(uint8(0x0A)), new(uint32(8)), compat, 0, ErrHandshake},
+		{"omitted under preferred", sizeOffer{Preferred: new(1024)}, nil, nil, pref, 0, ErrHandshake},
+		{"compat omission uses proposal", sizeOffer{Standard: new(1024)}, nil, nil, compat, 1024, nil},
+		{"compat omission capped", sizeOffer{Standard: new(65536)}, nil, nil, compat, DefaultMaxTPDULength, nil},
 		{"compat omission omitted CR", sizeOffer{Omitted: true}, nil, nil, compat, DefaultMaxTPDULength, nil},
-		{"preferred not offered", sizeOffer{Standard: gapInt(1024)}, nil, gapU32(4), compat, 0, ErrHandshake},
-		{"preferred zero units", sizeOffer{Preferred: gapInt(1024)}, nil, gapU32(0), pref, 0, ErrHandshake},
-		{"preferred too many units", sizeOffer{Preferred: gapInt(1024)}, nil, gapU32(512), pref, 0, ErrHandshake},
-		{"preferred exceeds offer", sizeOffer{Preferred: gapInt(1024)}, nil, gapU32(9), pref, 0, ErrHandshake},
-		{"preferred ok", sizeOffer{Preferred: gapInt(1024)}, nil, gapU32(4), pref, 512, nil},
-		{"standard not offered", sizeOffer{Preferred: gapInt(1024)}, gapU8(0x09), nil, pref, 0, ErrHandshake},
-		{"standard bad code", sizeOffer{Standard: gapInt(1024)}, gapU8(0x11), nil, compat, 0, ErrHandshake},
-		{"standard omitted CR capped", sizeOffer{Omitted: true}, gapU8(0x10), nil, compat, DefaultMaxTPDULength, nil},
-		{"standard omitted CR smaller", sizeOffer{Omitted: true}, gapU8(0x0A), nil, compat, 1024, nil},
-		{"standard exceeds offer", sizeOffer{Standard: gapInt(1024)}, gapU8(0x0B), nil, compat, 0, ErrHandshake},
-		{"standard ok", sizeOffer{Standard: gapInt(1024)}, gapU8(0x09), nil, compat, 512, nil},
+		{"preferred not offered", sizeOffer{Standard: new(1024)}, nil, new(uint32(4)), compat, 0, ErrHandshake},
+		{"preferred zero units", sizeOffer{Preferred: new(1024)}, nil, new(uint32(0)), pref, 0, ErrHandshake},
+		{"preferred too many units", sizeOffer{Preferred: new(1024)}, nil, new(uint32(512)), pref, 0, ErrHandshake},
+		{"preferred exceeds offer", sizeOffer{Preferred: new(1024)}, nil, new(uint32(9)), pref, 0, ErrHandshake},
+		{"preferred ok", sizeOffer{Preferred: new(1024)}, nil, new(uint32(4)), pref, 512, nil},
+		{"standard not offered", sizeOffer{Preferred: new(1024)}, new(uint8(0x09)), nil, pref, 0, ErrHandshake},
+		{"standard bad code", sizeOffer{Standard: new(1024)}, new(uint8(0x11)), nil, compat, 0, ErrHandshake},
+		{"standard omitted CR capped", sizeOffer{Omitted: true}, new(uint8(0x10)), nil, compat, DefaultMaxTPDULength, nil},
+		{"standard omitted CR smaller", sizeOffer{Omitted: true}, new(uint8(0x0A)), nil, compat, 1024, nil},
+		{"standard exceeds offer", sizeOffer{Standard: new(1024)}, new(uint8(0x0B)), nil, compat, 0, ErrHandshake},
+		{"standard ok", sizeOffer{Standard: new(1024)}, new(uint8(0x09)), nil, compat, 512, nil},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -467,15 +462,15 @@ func TestGapStringMethods(t *testing.T) {
 		{"param long", Parameter{Code: 0xC2, Value: longSel}.String(), "0xC2=0102030405060708...(10)"},
 		{"CR full", (&CR{
 			DestinationRef: 0, SourceRef: 7, CallingSelector: longSel, CalledSelector: []byte{0xAA},
-			TPDUSize: gapU8(0x0A), PreferredMaxTPDUSize: gapU32(8),
+			TPDUSize: new(uint8(0x0A)), PreferredMaxTPDUSize: new(uint32(8)),
 			Parameters: []Parameter{{Code: 0x99}}, UserData: []byte{1, 2},
 		}).String(), "CR{CDT:0 DST:0 SRC:7 Class:0 calling:0102030405060708 called:aa size:10 pref:8 params:1 userdata:2}"},
 		{"CC full", (&CC{
 			DestinationRef: 7, SourceRef: 9, CallingSelector: []byte{}, CalledSelector: longSel,
-			TPDUSize: gapU8(0x0B), PreferredMaxTPDUSize: gapU32(2),
+			TPDUSize: new(uint8(0x0B)), PreferredMaxTPDUSize: new(uint32(2)),
 			Parameters: []Parameter{{Code: 0x99}, {Code: 0x98}}, UserData: []byte{1},
 		}).String(), "CC{CDT:0 DST:7 SRC:9 Class:0 calling: called:0102030405060708 size:11 pref:2 params:2 userdata:1}"},
-		{"DT full", (&DT{EOT: true, TPDUNR: gapU8(3), DestinationRef: gapU16(5), Parameters: []Parameter{{Code: 1}}, UserData: []byte{1, 2, 3}}).String(),
+		{"DT full", (&DT{EOT: true, TPDUNR: new(uint8(3)), DestinationRef: new(uint16(5)), Parameters: []Parameter{{Code: 1}}, UserData: []byte{1, 2, 3}}).String(),
 			"DT{EOT:true NR:3 DST:5 params:1 userdata:3}"},
 		{"AK params", (&AK{CDT: 1, DestinationRef: 2, YRTUNR: 3, Parameters: []Parameter{{Code: 1}}}).String(), "AK{CDT:1 DST:2 YRTUNR:3 params:1}"},
 		{"EA params", (&EA{DestinationRef: 2, YREDTUNR: 4, Parameters: []Parameter{{Code: 1}}}).String(), "EA{DST:2 YREDTUNR:4 params:1}"},

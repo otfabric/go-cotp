@@ -276,10 +276,7 @@ func selectPreferredPath(peerPreferred, serverCeiling, callbackCeiling int) (siz
 	if err != nil {
 		return sizeSelection{}, err
 	}
-	selected := peerPreferred
-	if serverEff < selected {
-		selected = serverEff
-	}
+	selected := min(serverEff, peerPreferred)
 	if callbackCeiling != 0 {
 		cbEff, err := normalizePreferredCeiling(callbackCeiling)
 		if err != nil {
@@ -292,12 +289,12 @@ func selectPreferredPath(peerPreferred, serverCeiling, callbackCeiling int) (siz
 	if selected < MinTPDULength {
 		return sizeSelection{}, fmt.Errorf("selected preferred %d: %w", selected, ErrHandshake)
 	}
-	units := uint32(selected / 128)
-	if units == 0 || units > MaxPreferredUnitsITOT {
-		return sizeSelection{}, fmt.Errorf("selected preferred units %d: %w", units, ErrHandshake)
+	n := selected / 128
+	if n <= 0 || n > MaxPreferredUnitsITOT {
+		return sizeSelection{}, fmt.Errorf("selected preferred units %d: %w", n, ErrHandshake)
 	}
-	selected = int(units) * 128
-	u := units
+	selected = n * 128
+	u := uint32(n)
 	return sizeSelection{Path: sizePathPreferred, Effective: selected, PreferredUnits: &u}, nil
 }
 
@@ -306,10 +303,7 @@ func selectStandardPath(peerStandard, serverCeiling, callbackCeiling int) (sizeS
 	if err != nil {
 		return sizeSelection{}, err
 	}
-	selected := peerStandard
-	if serverSize < selected {
-		selected = serverSize
-	}
+	selected := min(serverSize, peerStandard)
 	if callbackCeiling != 0 {
 		cbSize, _, err := normalizeStandardCeiling(callbackCeiling)
 		if err != nil {
@@ -348,10 +342,7 @@ func interpretCCSize(sent sizeOffer, ccStandardCode *uint8, ccPreferredUnits *ui
 			return 0, fmt.Errorf("CC omits size under PreferredMaximum: %w", ErrHandshake)
 		}
 		// Compat omission: min(client effective proposal, 65531)
-		local := clientEffectiveProposal(sent)
-		if local > DefaultMaxTPDULength {
-			local = DefaultMaxTPDULength
-		}
+		local := min(clientEffectiveProposal(sent), DefaultMaxTPDULength)
 		return local, nil
 	}
 

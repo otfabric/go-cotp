@@ -57,10 +57,6 @@ func mustDecodeCR(t *testing.T, b []byte) *cotp.CR {
 	return msg.CR
 }
 
-func u8(v uint8) *uint8 { return &v }
-
-func u16(v uint16) *uint16 { return &v }
-
 // acceptWithRawClient completes a Class 0 handshake with a real Accept endpoint
 // and a raw TPKT peer acting as client. Returns the open server Conn and the
 // raw peer connection for adversarial injection.
@@ -75,7 +71,7 @@ func acceptWithRawClient(t *testing.T, srvCfg cotp.ServerConfig, cr *cotp.CR) (s
 		errCh <- err
 	}()
 	if cr.TPDUSize == nil {
-		cr.TPDUSize = u8(0x0A) // 1024
+		cr.TPDUSize = new(uint8(0x0A)) // 1024
 	}
 	if cr.SourceRef == 0 {
 		cr.SourceRef = 0x1111
@@ -126,7 +122,7 @@ func TestAdversarial_HandshakeZeroSourceRef(t *testing.T) {
 	go func() {
 		defer close(peerDone)
 		defer func() { _ = c1.Close() }()
-		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{SourceRef: 0, TPDUSize: u8(0x0A)}))
+		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{SourceRef: 0, TPDUSize: new(uint8(0x0A))}))
 		r, _ := tpkt.NewReader(c1, tpkt.ReaderConfig{})
 		_, err := r.ReadPacket()
 		if err == nil {
@@ -149,7 +145,7 @@ func TestAdversarial_HandshakeNonZeroDSTRef(t *testing.T) {
 	done := make(chan []byte, 1)
 	go func() {
 		defer func() { _ = c1.Close() }()
-		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{DestinationRef: 1, SourceRef: 2, TPDUSize: u8(0x0A)}))
+		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{DestinationRef: 1, SourceRef: 2, TPDUSize: new(uint8(0x0A))}))
 		done <- readPeerTPDU(t, c1)
 	}()
 	_, err := cotp.Accept(context.Background(), c2, cotp.ServerConfig{MaxTPDULength: 1024})
@@ -167,7 +163,7 @@ func TestAdversarial_HandshakeUnsupportedClass(t *testing.T) {
 	done := make(chan []byte, 1)
 	go func() {
 		defer func() { _ = c1.Close() }()
-		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{SourceRef: 3, ClassOption: 0x20, TPDUSize: u8(0x0A)}))
+		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{SourceRef: 3, ClassOption: 0x20, TPDUSize: new(uint8(0x0A))}))
 		done <- readPeerTPDU(t, c1)
 	}()
 	_, err := cotp.Accept(context.Background(), c2, cotp.ServerConfig{MaxTPDULength: 1024})
@@ -192,7 +188,7 @@ func TestAdversarial_HandshakeIllegalCDT(t *testing.T) {
 	done := make(chan []byte, 1)
 	go func() {
 		defer func() { _ = c1.Close() }()
-		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{CDT: 1, SourceRef: 4, TPDUSize: u8(0x0A)}))
+		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{CDT: 1, SourceRef: 4, TPDUSize: new(uint8(0x0A))}))
 		done <- readPeerTPDU(t, c1)
 	}()
 	_, err := cotp.Accept(context.Background(), c2, cotp.ServerConfig{MaxTPDULength: 1024})
@@ -213,7 +209,7 @@ func TestAdversarial_HandshakeBadSelector(t *testing.T) {
 		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{
 			SourceRef:      5,
 			CalledSelector: []byte{0xFF},
-			TPDUSize:       u8(0x0A),
+			TPDUSize:       new(uint8(0x0A)),
 		}))
 		done <- readPeerTPDU(t, c1)
 	}()
@@ -240,7 +236,7 @@ func TestAdversarial_HandshakeForbiddenParameter(t *testing.T) {
 		defer func() { _ = c1.Close() }()
 		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{
 			SourceRef:  6,
-			TPDUSize:   u8(0x0A),
+			TPDUSize:   new(uint8(0x0A)),
 			Parameters: []cotp.Parameter{{Code: 0xC5, Value: []byte{1}}},
 		}))
 		done <- readPeerTPDU(t, c1)
@@ -261,7 +257,7 @@ func TestAdversarial_HandshakeInvalidSizeCode(t *testing.T) {
 	go func() {
 		defer func() { _ = c1.Close() }()
 		// 0x11 = undefined TPDU size code; not in X.224 §13.3.4 b.
-		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{SourceRef: 7, TPDUSize: u8(0x11)}))
+		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{SourceRef: 7, TPDUSize: new(uint8(0x11))}))
 		done <- readPeerTPDU(t, c1)
 	}()
 	_, err := cotp.Accept(context.Background(), c2, cotp.ServerConfig{MaxTPDULength: 1024})
@@ -304,7 +300,7 @@ func TestAdversarial_HandshakeCallbackReject(t *testing.T) {
 	done := make(chan []byte, 1)
 	go func() {
 		defer func() { _ = c1.Close() }()
-		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{SourceRef: 8, TPDUSize: u8(0x0A)}))
+		writePeerTPDU(t, c1, mustMarshalTPDU(t, &cotp.CR{SourceRef: 8, TPDUSize: new(uint8(0x0A))}))
 		done <- readPeerTPDU(t, c1)
 	}()
 	_, err := cotp.Accept(context.Background(), c2, cotp.ServerConfig{
@@ -356,7 +352,7 @@ func TestAdversarial_HandshakeWrongCCRefs(t *testing.T) {
 		writePeerTPDU(t, c2, mustMarshalTPDU(t, &cotp.CC{
 			DestinationRef: cr.SourceRef + 1,
 			SourceRef:      0x2222,
-			TPDUSize:       u8(0x0A),
+			TPDUSize:       new(uint8(0x0A)),
 		}))
 	}()
 	_, err := cotp.Connect(context.Background(), c1, cotp.ClientConfig{MaxTPDULength: 1024})
@@ -372,7 +368,7 @@ func TestAdversarial_HandshakeWrongSizeSelection(t *testing.T) {
 		writePeerTPDU(t, c2, mustMarshalTPDU(t, &cotp.CC{
 			DestinationRef: cr.SourceRef,
 			SourceRef:      0x2222,
-			TPDUSize:       u8(0x0B), // 2048 > client 1024 offer
+			TPDUSize:       new(uint8(0x0B)), // 2048 > client 1024 offer
 		}))
 	}()
 	_, err := cotp.Connect(context.Background(), c1, cotp.ClientConfig{MaxTPDULength: 1024})
@@ -415,7 +411,7 @@ func TestAdversarial_OpenStateIllegalTPDUs(t *testing.T) {
 		{"AK", mustMarshalTPDU(t, &cotp.AK{DestinationRef: 1}), cotp.ErrUnexpectedTPDU},
 		{"EA", mustMarshalTPDU(t, &cotp.EA{DestinationRef: 1}), cotp.ErrUnexpectedTPDU},
 		{"RJ", mustMarshalTPDU(t, &cotp.RJ{DestinationRef: 1}), cotp.ErrUnexpectedTPDU},
-		{"ED", mustMarshalTPDU(t, &cotp.ED{DestinationRef: u16(1), TPDUNR: &nr, UserData: []byte{1}}), cotp.ErrUnexpectedTPDU},
+		{"ED", mustMarshalTPDU(t, &cotp.ED{DestinationRef: new(uint16(1)), TPDUNR: &nr, UserData: []byte{1}}), cotp.ErrUnexpectedTPDU},
 		{"F1", []byte{0x02, 0xF1, 0x80, 0x01}, cotp.ErrHandshake},
 		{"nonzero-NR", []byte{0x02, 0xF0, 0x81, 0x01}, cotp.ErrHandshake},
 		{"empty-seg", []byte{0x02, 0xF0, 0x80}, cotp.ErrHandshake},
@@ -443,7 +439,7 @@ func TestAdversarial_OpenStateIllegalTPDUs(t *testing.T) {
 }
 
 func TestAdversarial_EOFMidTSDU(t *testing.T) {
-	srv, peer := acceptWithRawClient(t, cotp.ServerConfig{MaxTPDULength: 128}, &cotp.CR{TPDUSize: u8(0x07)})
+	srv, peer := acceptWithRawClient(t, cotp.ServerConfig{MaxTPDULength: 128}, &cotp.CR{TPDUSize: new(uint8(0x07))})
 	go func() {
 		writePeerTPDU(t, peer, mustMarshalTPDU(t, &cotp.DT{EOT: false, UserData: []byte{1}}))
 		_ = peer.Close()
@@ -455,7 +451,7 @@ func TestAdversarial_EOFMidTSDU(t *testing.T) {
 }
 
 func TestAdversarial_OversizedTPDU(t *testing.T) {
-	srv, peer := acceptWithRawClient(t, cotp.ServerConfig{MaxTPDULength: 128}, &cotp.CR{TPDUSize: u8(0x07)})
+	srv, peer := acceptWithRawClient(t, cotp.ServerConfig{MaxTPDULength: 128}, &cotp.CR{TPDUSize: new(uint8(0x07))})
 	go func() {
 		writePeerTPDU(t, peer, mustMarshalTPDU(t, &cotp.DT{
 			EOT:      true,
@@ -471,7 +467,7 @@ func TestAdversarial_OversizedTPDU(t *testing.T) {
 func TestAdversarial_EndlessNonEOTHitsBound(t *testing.T) {
 	srv, peer := acceptWithRawClient(t,
 		cotp.ServerConfig{MaxTPDULength: 128, MaxTSDULength: 250},
-		&cotp.CR{TPDUSize: u8(0x07)},
+		&cotp.CR{TPDUSize: new(uint8(0x07))},
 	)
 	errCh := make(chan error, 1)
 	go func() {
@@ -492,7 +488,7 @@ func TestAdversarial_EndlessNonEOTHitsBound(t *testing.T) {
 }
 
 func TestAdversarial_PeerResetDuringWrite(t *testing.T) {
-	srv, peer := acceptWithRawClient(t, cotp.ServerConfig{MaxTPDULength: 128}, &cotp.CR{TPDUSize: u8(0x07)})
+	srv, peer := acceptWithRawClient(t, cotp.ServerConfig{MaxTPDULength: 128}, &cotp.CR{TPDUSize: new(uint8(0x07))})
 	errCh := make(chan error, 1)
 	go func() {
 		// Large enough to block on net.Pipe until the peer closes.

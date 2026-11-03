@@ -63,10 +63,7 @@ func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error {
 
 	start, tracked := c.writeProgress()
 	for offset := 0; offset < len(tsdu); {
-		end := offset + maxSeg
-		if end > len(tsdu) {
-			end = len(tsdu)
-		}
+		end := min(offset+maxSeg, len(tsdu))
 		chunk := tsdu[offset:end]
 		eot := end == len(tsdu)
 		payload, err := (&DT{EOT: eot, UserData: chunk}).MarshalBinary()
@@ -248,6 +245,10 @@ func (c *Conn) classifyIOPhase(ctx context.Context, err error, midTSDU bool) err
 			return c.abort(errors.Join(ErrIncompleteTSDU, &DisconnectError{Cause: err}))
 		}
 		return c.abort(&DisconnectError{Cause: err})
+	}
+	if isFramingError(err) {
+		// A protocol violation by the peer, reported like a malformed DT.
+		return c.abortOpen(midTSDU, fmt.Errorf("%w: %w", ErrHandshake, err))
 	}
 	if midTSDU {
 		return c.abort(errors.Join(ErrIncompleteTSDU, &DisconnectError{Cause: err}))

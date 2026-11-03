@@ -106,7 +106,7 @@ func TestConnect_HappyPath(t *testing.T) {
 			DestinationRef: cr.SourceRef,
 			SourceRef:      0x2222,
 			ClassOption:    0,
-			TPDUSize:       uint8Ptr(0x0A), // 1024
+			TPDUSize:       new(uint8(0x0A)), // 1024
 			CalledSelector: []byte{0x02},
 			UserData:       []byte{0xAA},
 		}
@@ -259,7 +259,7 @@ func TestConnect_WrongSizeSelection(t *testing.T) {
 			DestinationRef: cr.SourceRef,
 			SourceRef:      2,
 			ClassOption:    0,
-			TPDUSize:       uint8Ptr(0x0B),
+			TPDUSize:       new(uint8(0x0B)),
 		}
 		writeTPDU(t, c2, mustMarshal(t, cc))
 	}()
@@ -280,7 +280,7 @@ func TestConnect_MismatchedReturnedSelector(t *testing.T) {
 			SourceRef:      2,
 			ClassOption:    0,
 			CalledSelector: []byte{0xFF},
-			TPDUSize:       uint8Ptr(0x0A),
+			TPDUSize:       new(uint8(0x0A)),
 		}
 		writeTPDU(t, c2, mustMarshal(t, cc))
 	}()
@@ -416,5 +416,3 @@ func TestConnect_ContextCanceledBeforeIO(t *testing.T) {
 		t.Fatal("pre-I/O cancel must not wrap ErrClosed")
 	}
 }
-
-func uint8Ptr(v uint8) *uint8 { return &v }

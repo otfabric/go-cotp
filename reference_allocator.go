@@ -32,7 +32,7 @@ func (a *referenceAllocator) Allocate() (uint16, error) {
 	if len(a.active) >= 65535 {
 		return 0, fmt.Errorf("reference allocator exhausted: %w", ErrInvalidConfig)
 	}
-	for tried := 0; tried < 65536; tried++ {
+	for range 65536 {
 		cand := a.next
 		a.next++
 		if cand == 0 {

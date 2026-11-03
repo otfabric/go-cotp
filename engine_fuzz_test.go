@@ -81,12 +81,12 @@ func FuzzDecodeOpenDT(f *testing.F) {
 
 func FuzzAcceptHandshake(f *testing.F) {
 	for _, s := range [][]byte{
-		mustMarshalFuzz(&CR{SourceRef: 1, TPDUSize: uint8PtrFuzz(0x0A)}),
-		mustMarshalFuzz(&CR{SourceRef: 0, TPDUSize: uint8PtrFuzz(0x0A)}),
-		mustMarshalFuzz(&CR{DestinationRef: 1, SourceRef: 2, TPDUSize: uint8PtrFuzz(0x0A)}),
-		mustMarshalFuzz(&CR{SourceRef: 3, ClassOption: 0x20, TPDUSize: uint8PtrFuzz(0x0A)}),
-		mustMarshalFuzz(&CR{CDT: 1, SourceRef: 4, TPDUSize: uint8PtrFuzz(0x0A)}),
-		mustMarshalFuzz(&CR{SourceRef: 5, TPDUSize: uint8PtrFuzz(0x0C)}),
+		mustMarshalFuzz(&CR{SourceRef: 1, TPDUSize: new(uint8(0x0A))}),
+		mustMarshalFuzz(&CR{SourceRef: 0, TPDUSize: new(uint8(0x0A))}),
+		mustMarshalFuzz(&CR{DestinationRef: 1, SourceRef: 2, TPDUSize: new(uint8(0x0A))}),
+		mustMarshalFuzz(&CR{SourceRef: 3, ClassOption: 0x20, TPDUSize: new(uint8(0x0A))}),
+		mustMarshalFuzz(&CR{CDT: 1, SourceRef: 4, TPDUSize: new(uint8(0x0A))}),
+		mustMarshalFuzz(&CR{SourceRef: 5, TPDUSize: new(uint8(0x0C))}),
 		{0x02, 0x00, 0x00},
 		loadHexSeed(f, "testdata/tp0/connect/s7_cr_tsap1024.hex"),
 		loadHexSeed(f, "testdata/tp0/connect/mms_cr_selectors.hex"),
@@ -208,8 +208,6 @@ func mustMarshalFuzz(v interface{ MarshalBinary() ([]byte, error) }) []byte {
 	}
 	return b
 }
-
-func uint8PtrFuzz(v uint8) *uint8 { return &v }
 
 func loadHexSeed(f *testing.F, path string) []byte {
 	f.Helper()

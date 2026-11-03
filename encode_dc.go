@@ -12,13 +12,9 @@ func (d *DC) MarshalBinary() ([]byte, error) {
 	if d == nil {
 		return nil, fmt.Errorf("marshal DC: %w", ErrNilReceiver)
 	}
-	var varPart []byte
-	for _, p := range d.Parameters {
-		if len(p.Value) > 255 {
-			return nil, fmt.Errorf("marshal DC: parameter 0x%02x value length %d: %w", p.Code, len(p.Value), ErrUnexpectedParameterLength)
-		}
-		varPart = append(varPart, p.Code, byte(len(p.Value)))
-		varPart = append(varPart, p.Value...)
+	varPart, err := encodeVariablePart(d.Parameters)
+	if err != nil {
+		return nil, fmt.Errorf("marshal DC: %w", err)
 	}
 	li := 5 + len(varPart)
 	if li > MaxLI {

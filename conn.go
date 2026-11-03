@@ -12,7 +12,9 @@ import (
 	"github.com/otfabric/go-tpkt"
 )
 
-type connState uint8
+// connState is uint32 so that it round-trips through Conn.state
+// (atomic.Uint32) without a narrowing conversion.
+type connState uint32
 
 const (
 	stateConnecting connState = iota

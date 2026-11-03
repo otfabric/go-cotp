@@ -167,7 +167,7 @@ func TestDT_MarshalBinary_RoundTrip(t *testing.T) {
 func TestDT_MarshalBinary_WithUserData(t *testing.T) {
 	dt := &DT{
 		EOT:      false,
-		TPDUNR:   bytePtr(1),
+		TPDUNR:   new(byte(1)),
 		UserData: []byte{0xCA, 0xFE},
 	}
 	out, err := dt.MarshalBinary()
@@ -209,7 +209,7 @@ func TestDT_MarshalBinary_NilUserData(t *testing.T) {
 }
 
 func TestDT_MarshalBinary_Deterministic(t *testing.T) {
-	dt := &DT{EOT: true, TPDUNR: bytePtr(5), UserData: []byte{1, 2, 3}}
+	dt := &DT{EOT: true, TPDUNR: new(byte(5)), UserData: []byte{1, 2, 3}}
 	out1, _ := dt.MarshalBinary()
 	out2, _ := dt.MarshalBinary()
 	if !bytes.Equal(out1, out2) {
@@ -221,7 +221,7 @@ func TestDT_MarshalBinary_NormalRoundTrip(t *testing.T) {
 	ref := uint16(0x1234)
 	dt := &DT{
 		EOT:            true,
-		TPDUNR:         bytePtr(7),
+		TPDUNR:         new(byte(7)),
 		DestinationRef: &ref,
 		UserData:       []byte{0xAA},
 	}

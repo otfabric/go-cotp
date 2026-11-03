@@ -17,7 +17,7 @@ func BenchmarkCREncodeDecode(b *testing.B) {
 		SourceRef:       0x0001,
 		CallingSelector: []byte{0x01, 0x00},
 		CalledSelector:  []byte{0x01, 0x01},
-		TPDUSize:        uint8Ptr(0x0A),
+		TPDUSize:        new(uint8(0x0A)),
 	}
 	wire, err := cr.MarshalBinary()
 	if err != nil {
@@ -43,7 +43,7 @@ func BenchmarkCCEncodeDecode(b *testing.B) {
 		SourceRef:       0x0002,
 		CallingSelector: []byte{0x01, 0x00},
 		CalledSelector:  []byte{0x01, 0x01},
-		TPDUSize:        uint8Ptr(0x0A),
+		TPDUSize:        new(uint8(0x0A)),
 	}
 	b.ReportAllocs()
 	b.ResetTimer()

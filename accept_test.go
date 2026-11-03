@@ -45,7 +45,7 @@ func TestAccept_HappyPath(t *testing.T) {
 			ClassOption:     0,
 			CalledSelector:  []byte{0x02},
 			CallingSelector: []byte{0x01},
-			TPDUSize:        uint8Ptr(0x0A),
+			TPDUSize:        new(uint8(0x0A)),
 			UserData:        []byte{0xAA},
 		})
 		done <- readPeerResponse(t, c1)
@@ -97,7 +97,7 @@ func TestAccept_DefaultSelectorPolicyRejectsMismatch(t *testing.T) {
 		writePeerCR(t, c1, &CR{
 			SourceRef:      0x10,
 			CalledSelector: []byte{0xFF},
-			TPDUSize:       uint8Ptr(0x0A),
+			TPDUSize:       new(uint8(0x0A)),
 		})
 		done <- readPeerResponse(t, c1)
 	}()
@@ -123,7 +123,7 @@ func TestAccept_DefaultSelectorPolicyNilAllowsAbsent(t *testing.T) {
 	c1, c2 := net.Pipe()
 	go func() {
 		defer func() { _ = c1.Close() }()
-		writePeerCR(t, c1, &CR{SourceRef: 1, TPDUSize: uint8Ptr(0x0A)})
+		writePeerCR(t, c1, &CR{SourceRef: 1, TPDUSize: new(uint8(0x0A))})
 		_ = readPeerResponse(t, c1)
 	}()
 
@@ -138,7 +138,7 @@ func TestAccept_OnConnectAccept(t *testing.T) {
 	c1, c2 := net.Pipe()
 	go func() {
 		defer func() { _ = c1.Close() }()
-		writePeerCR(t, c1, &CR{SourceRef: 2, TPDUSize: uint8Ptr(0x0A), UserData: []byte{1}})
+		writePeerCR(t, c1, &CR{SourceRef: 2, TPDUSize: new(uint8(0x0A)), UserData: []byte{1}})
 		_ = readPeerResponse(t, c1)
 	}()
 
@@ -168,7 +168,7 @@ func TestAccept_OnConnectRejectSendsDR(t *testing.T) {
 	done := make(chan Decoded, 1)
 	go func() {
 		defer func() { _ = c1.Close() }()
-		writePeerCR(t, c1, &CR{SourceRef: 3, TPDUSize: uint8Ptr(0x0A)})
+		writePeerCR(t, c1, &CR{SourceRef: 3, TPDUSize: new(uint8(0x0A))})
 		done <- readPeerResponse(t, c1)
 	}()
 
@@ -194,7 +194,7 @@ func TestAccept_OnConnectErrorClosesWithoutDR(t *testing.T) {
 	go func() {
 		defer close(peerDone)
 		defer func() { _ = c1.Close() }()
-		writePeerCR(t, c1, &CR{SourceRef: 4, TPDUSize: uint8Ptr(0x0A)})
+		writePeerCR(t, c1, &CR{SourceRef: 4, TPDUSize: new(uint8(0x0A))})
 		tr, err := tpkt.NewReader(c1, tpkt.ReaderConfig{})
 		if err != nil {
 			t.Error(err)
@@ -227,7 +227,7 @@ func TestAccept_OnConnectInvalidAction(t *testing.T) {
 	c1, c2 := net.Pipe()
 	go func() {
 		defer func() { _ = c1.Close() }()
-		writePeerCR(t, c1, &CR{SourceRef: 5, TPDUSize: uint8Ptr(0x0A)})
+		writePeerCR(t, c1, &CR{SourceRef: 5, TPDUSize: new(uint8(0x0A))})
 		buf := make([]byte, 1)
 		_, _ = c1.Read(buf)
 	}()
@@ -247,7 +247,7 @@ func TestAccept_ConnectDataTooLargeBeforeCC(t *testing.T) {
 	c1, c2 := net.Pipe()
 	go func() {
 		defer func() { _ = c1.Close() }()
-		writePeerCR(t, c1, &CR{SourceRef: 6, TPDUSize: uint8Ptr(0x0A)})
+		writePeerCR(t, c1, &CR{SourceRef: 6, TPDUSize: new(uint8(0x0A))})
 		buf := make([]byte, 1)
 		_, _ = c1.Read(buf)
 	}()
@@ -272,7 +272,7 @@ func TestAccept_InvalidClass0CRSendsER(t *testing.T) {
 			CDT:         1,
 			SourceRef:   0x20,
 			ClassOption: 0,
-			TPDUSize:    uint8Ptr(0x0A),
+			TPDUSize:    new(uint8(0x0A)),
 		})
 		done <- readPeerResponse(t, c1)
 	}()
@@ -298,7 +298,7 @@ func TestAccept_ForbiddenParameterSendsER(t *testing.T) {
 		writePeerCR(t, c1, &CR{
 			SourceRef:  0x21,
 			Parameters: []Parameter{{Code: 0xC5, Value: []byte{0x01}}},
-			TPDUSize:   uint8Ptr(0x0A),
+			TPDUSize:   new(uint8(0x0A)),
 		})
 		done <- readPeerResponse(t, c1)
 	}()
@@ -321,7 +321,7 @@ func TestAccept_NonClass0PreferredSendsDR(t *testing.T) {
 		writePeerCR(t, c1, &CR{
 			SourceRef:   0x22,
 			ClassOption: 0x20, // class 2
-			TPDUSize:    uint8Ptr(0x0A),
+			TPDUSize:    new(uint8(0x0A)),
 		})
 		done <- readPeerResponse(t, c1)
 	}()
@@ -384,7 +384,7 @@ func TestAccept_ZeroSourceRefClosesWithoutER(t *testing.T) {
 	go func() {
 		defer close(peerDone)
 		defer func() { _ = c1.Close() }()
-		writePeerCR(t, c1, &CR{SourceRef: 0, TPDUSize: uint8Ptr(0x0A)})
+		writePeerCR(t, c1, &CR{SourceRef: 0, TPDUSize: new(uint8(0x0A))})
 		tr, _ := tpkt.NewReader(c1, tpkt.ReaderConfig{})
 		_, err := tr.ReadPacket()
 		if err == nil {
@@ -413,7 +413,7 @@ func TestAccept_SelectedSizeMatchesCCPath(t *testing.T) {
 		writePeerCR(t, c1, &CR{
 			SourceRef:            0x33,
 			PreferredMaxTPDUSize: &u,
-			TPDUSize:             uint8Ptr(0x0A), // dual offer
+			TPDUSize:             new(uint8(0x0A)), // dual offer
 		})
 		done <- readPeerResponse(t, c1)
 	}()
@@ -443,7 +443,7 @@ func TestAccept_FailureReleasesReference(t *testing.T) {
 	c1, c2 := net.Pipe()
 	go func() {
 		defer func() { _ = c1.Close() }()
-		writePeerCR(t, c1, &CR{SourceRef: 7, TPDUSize: uint8Ptr(0x0A)})
+		writePeerCR(t, c1, &CR{SourceRef: 7, TPDUSize: new(uint8(0x0A))})
 		_ = readPeerResponse(t, c1) // DR
 	}()
 

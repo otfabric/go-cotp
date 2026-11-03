@@ -3,6 +3,7 @@
 package cotp
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 )
@@ -57,14 +58,11 @@ func encodePreferredMaxUnits(units uint32) ([]byte, error) {
 	if units == 0 {
 		return nil, fmt.Errorf("preferred max TPDU size: zero units: %w", ErrUnexpectedParameterLength)
 	}
-	switch {
-	case units <= 0xff:
-		return []byte{byte(units)}, nil
-	case units <= 0xffff:
-		return []byte{byte(units >> 8), byte(units)}, nil
-	case units <= 0xffffff:
-		return []byte{byte(units >> 16), byte(units >> 8), byte(units)}, nil
-	default:
-		return []byte{byte(units >> 24), byte(units >> 16), byte(units >> 8), byte(units)}, nil
+	var buf [4]byte
+	binary.BigEndian.PutUint32(buf[:], units)
+	lead := 0
+	for buf[lead] == 0 {
+		lead++
 	}
+	return append([]byte(nil), buf[lead:]...), nil
 }

@@ -23,13 +23,9 @@ func (e *ED) MarshalBinary() ([]byte, error) {
 	if len(userData) < MinEDUserDataLen || len(userData) > MaxEDUserDataLen {
 		return nil, fmt.Errorf("marshal ED: user data length %d: %w", len(userData), ErrInvalidEDUserDataLength)
 	}
-	var varPart []byte
-	for _, p := range e.Parameters {
-		if len(p.Value) > 255 {
-			return nil, fmt.Errorf("marshal ED: parameter 0x%02x value length %d: %w", p.Code, len(p.Value), ErrUnexpectedParameterLength)
-		}
-		varPart = append(varPart, p.Code, byte(len(p.Value)))
-		varPart = append(varPart, p.Value...)
+	varPart, err := encodeVariablePart(e.Parameters)
+	if err != nil {
+		return nil, fmt.Errorf("marshal ED: %w", err)
 	}
 	li := 4 + len(varPart)
 	if li > MaxLI {

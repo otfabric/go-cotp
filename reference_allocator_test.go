@@ -57,8 +57,7 @@ func TestReferenceAllocator(t *testing.T) {
 		errs := make([]error, n)
 		var wg sync.WaitGroup
 		wg.Add(n)
-		for i := 0; i < n; i++ {
-			i := i
+		for i := range n {
 			go func() {
 				defer wg.Done()
 				refs[i], errs[i] = a.Allocate()
@@ -66,7 +65,7 @@ func TestReferenceAllocator(t *testing.T) {
 		}
 		wg.Wait()
 		seen := make(map[uint16]struct{}, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if errs[i] != nil {
 				t.Fatalf("alloc %d: %v", i, errs[i])
 			}

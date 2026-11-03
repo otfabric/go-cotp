@@ -81,6 +81,31 @@ func parseVariablePart(b []byte) ([]Parameter, error) {
 	return params, nil
 }
 
+// appendParameter appends one code+length+value parameter to dst. A value
+// longer than MaxParameterValueLength does not fit the one-octet length
+// field and is rejected.
+func appendParameter(dst []byte, code byte, value []byte) ([]byte, error) {
+	n := len(value)
+	if n > MaxParameterValueLength {
+		return nil, fmt.Errorf("parameter 0x%02x value length %d: %w", code, n, ErrUnexpectedParameterLength)
+	}
+	dst = append(dst, code, byte(n))
+	return append(dst, value...), nil
+}
+
+// encodeVariablePart encodes params, in order, as a generic variable part.
+// Used by DT, DR, DC, ER, ED, AK and EA.
+func encodeVariablePart(params []Parameter) ([]byte, error) {
+	var varPart []byte
+	for _, p := range params {
+		var err error
+		if varPart, err = appendParameter(varPart, p.Code, p.Value); err != nil {
+			return nil, err
+		}
+	}
+	return varPart, nil
+}
+
 // encodeCRCCVariablePart builds the CR/CC variable part in canonical order
 // (0xC1, 0xC2, 0xC0, 0xF0) then unknown Parameters. This order is a local
 // deterministic encoding policy, not an X.224 requirement.
@@ -88,17 +113,19 @@ func parseVariablePart(b []byte) ([]Parameter, error) {
 func encodeCRCCVariablePart(calling, called []byte, tpduSize *uint8, preferredMax *uint32, params []Parameter, what string) ([]byte, error) {
 	var varPart []byte
 	if calling != nil {
-		if len(calling) > MaxParameterValueLength {
-			return nil, fmt.Errorf("marshal %s: calling selector length %d: %w", what, len(calling), ErrUnexpectedParameterLength)
+		n := len(calling)
+		if n > MaxParameterValueLength {
+			return nil, fmt.Errorf("marshal %s: calling selector length %d: %w", what, n, ErrUnexpectedParameterLength)
 		}
-		varPart = append(varPart, ParamCallingSelector, byte(len(calling)))
+		varPart = append(varPart, ParamCallingSelector, byte(n))
 		varPart = append(varPart, calling...)
 	}
 	if called != nil {
-		if len(called) > MaxParameterValueLength {
-			return nil, fmt.Errorf("marshal %s: called selector length %d: %w", what, len(called), ErrUnexpectedParameterLength)
+		n := len(called)
+		if n > MaxParameterValueLength {
+			return nil, fmt.Errorf("marshal %s: called selector length %d: %w", what, n, ErrUnexpectedParameterLength)
 		}
-		varPart = append(varPart, ParamCalledSelector, byte(len(called)))
+		varPart = append(varPart, ParamCalledSelector, byte(n))
 		varPart = append(varPart, called...)
 	}
 	if tpduSize != nil {
@@ -109,19 +136,19 @@ func encodeCRCCVariablePart(calling, called []byte, tpduSize *uint8, preferredMa
 		if err != nil {
 			return nil, fmt.Errorf("marshal %s: %w", what, err)
 		}
-		varPart = append(varPart, ParamPreferredMaxTPDUSize, byte(len(enc)))
-		varPart = append(varPart, enc...)
+		if varPart, err = appendParameter(varPart, ParamPreferredMaxTPDUSize, enc); err != nil {
+			return nil, fmt.Errorf("marshal %s: %w", what, err)
+		}
 	}
 	for _, p := range params {
 		if p.Code == ParamCallingSelector || p.Code == ParamCalledSelector ||
 			p.Code == ParamTPDUSize || p.Code == ParamPreferredMaxTPDUSize {
 			continue
 		}
-		if len(p.Value) > MaxParameterValueLength {
-			return nil, fmt.Errorf("marshal %s: parameter 0x%02x value length %d: %w", what, p.Code, len(p.Value), ErrUnexpectedParameterLength)
+		var err error
+		if varPart, err = appendParameter(varPart, p.Code, p.Value); err != nil {
+			return nil, fmt.Errorf("marshal %s: %w", what, err)
 		}
-		varPart = append(varPart, p.Code, byte(len(p.Value)))
-		varPart = append(varPart, p.Value...)
 	}
 	return varPart, nil
 }

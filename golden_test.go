@@ -51,10 +51,10 @@ func TestCapturesDecode(t *testing.T) {
 func TestGoldenCRCC(t *testing.T) {
 	hexFiles := []struct {
 		file string
-		dec  func([]byte) (interface{}, error)
+		dec  func([]byte) (any, error)
 	}{
-		{"minimal_cr.hex", func(b []byte) (interface{}, error) { return DecodeCR(b) }},
-		{"minimal_cc.hex", func(b []byte) (interface{}, error) { return DecodeCC(b) }},
+		{"minimal_cr.hex", func(b []byte) (any, error) { return DecodeCR(b) }},
+		{"minimal_cc.hex", func(b []byte) (any, error) { return DecodeCC(b) }},
 	}
 	for _, tt := range hexFiles {
 		t.Run(tt.file, func(t *testing.T) {
@@ -79,19 +79,19 @@ func TestGoldenCRCC(t *testing.T) {
 func TestGoldenAll(t *testing.T) {
 	hexFiles := []struct {
 		file string
-		dec  func([]byte) (interface{}, error)
-		enc  func(interface{}) ([]byte, error)
+		dec  func([]byte) (any, error)
+		enc  func(any) ([]byte, error)
 	}{
-		{"minimal_cr.hex", func(b []byte) (interface{}, error) { return DecodeCR(b) }, func(x interface{}) ([]byte, error) { return x.(*CR).MarshalBinary() }},
-		{"minimal_cc.hex", func(b []byte) (interface{}, error) { return DecodeCC(b) }, func(x interface{}) ([]byte, error) { return x.(*CC).MarshalBinary() }},
-		{"minimal_dt.hex", func(b []byte) (interface{}, error) { return DecodeDT(b) }, func(x interface{}) ([]byte, error) { return x.(*DT).MarshalBinary() }},
-		{"minimal_dr.hex", func(b []byte) (interface{}, error) { return DecodeDR(b) }, func(x interface{}) ([]byte, error) { return x.(*DR).MarshalBinary() }},
-		{"minimal_dc.hex", func(b []byte) (interface{}, error) { return DecodeDC(b) }, func(x interface{}) ([]byte, error) { return x.(*DC).MarshalBinary() }},
-		{"minimal_er.hex", func(b []byte) (interface{}, error) { return DecodeER(b) }, func(x interface{}) ([]byte, error) { return x.(*ER).MarshalBinary() }},
-		{"minimal_ed.hex", func(b []byte) (interface{}, error) { return DecodeED(b) }, func(x interface{}) ([]byte, error) { return x.(*ED).MarshalBinary() }},
-		{"minimal_ak.hex", func(b []byte) (interface{}, error) { return DecodeAK(b) }, func(x interface{}) ([]byte, error) { return x.(*AK).MarshalBinary() }},
-		{"minimal_ea.hex", func(b []byte) (interface{}, error) { return DecodeEA(b) }, func(x interface{}) ([]byte, error) { return x.(*EA).MarshalBinary() }},
-		{"minimal_rj.hex", func(b []byte) (interface{}, error) { return DecodeRJ(b) }, func(x interface{}) ([]byte, error) { return x.(*RJ).MarshalBinary() }},
+		{"minimal_cr.hex", func(b []byte) (any, error) { return DecodeCR(b) }, func(x any) ([]byte, error) { return x.(*CR).MarshalBinary() }},
+		{"minimal_cc.hex", func(b []byte) (any, error) { return DecodeCC(b) }, func(x any) ([]byte, error) { return x.(*CC).MarshalBinary() }},
+		{"minimal_dt.hex", func(b []byte) (any, error) { return DecodeDT(b) }, func(x any) ([]byte, error) { return x.(*DT).MarshalBinary() }},
+		{"minimal_dr.hex", func(b []byte) (any, error) { return DecodeDR(b) }, func(x any) ([]byte, error) { return x.(*DR).MarshalBinary() }},
+		{"minimal_dc.hex", func(b []byte) (any, error) { return DecodeDC(b) }, func(x any) ([]byte, error) { return x.(*DC).MarshalBinary() }},
+		{"minimal_er.hex", func(b []byte) (any, error) { return DecodeER(b) }, func(x any) ([]byte, error) { return x.(*ER).MarshalBinary() }},
+		{"minimal_ed.hex", func(b []byte) (any, error) { return DecodeED(b) }, func(x any) ([]byte, error) { return x.(*ED).MarshalBinary() }},
+		{"minimal_ak.hex", func(b []byte) (any, error) { return DecodeAK(b) }, func(x any) ([]byte, error) { return x.(*AK).MarshalBinary() }},
+		{"minimal_ea.hex", func(b []byte) (any, error) { return DecodeEA(b) }, func(x any) ([]byte, error) { return x.(*EA).MarshalBinary() }},
+		{"minimal_rj.hex", func(b []byte) (any, error) { return DecodeRJ(b) }, func(x any) ([]byte, error) { return x.(*RJ).MarshalBinary() }},
 	}
 	for _, tt := range hexFiles {
 		t.Run(tt.file, func(t *testing.T) {

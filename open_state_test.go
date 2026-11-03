@@ -22,7 +22,7 @@ func TestOpenState_UnexpectedTPDUs(t *testing.T) {
 		{"DR", mustMarshal(t, &DR{DestinationRef: 1, SourceRef: 2, Reason: 0}), TypeDR, true},
 		{"DC", mustMarshal(t, &DC{DestinationRef: 1, SourceRef: 2}), TypeDC, false},
 		{"ER", mustMarshal(t, &ER{DestinationRef: 1, RejectCause: 1}), TypeER, false},
-		{"ED", mustMarshal(t, &ED{DestinationRef: uint16Ptr(1), TPDUNR: uint8Ptr(0), UserData: []byte{1}}), TypeED, false},
+		{"ED", mustMarshal(t, &ED{DestinationRef: new(uint16(1)), TPDUNR: new(uint8(0)), UserData: []byte{1}}), TypeED, false},
 		{"AK", mustMarshal(t, &AK{DestinationRef: 1}), TypeAK, false},
 		{"EA", mustMarshal(t, &EA{DestinationRef: 1}), TypeEA, false},
 		{"RJ", mustMarshal(t, &RJ{DestinationRef: 1}), TypeRJ, false},
@@ -252,5 +252,3 @@ func TestDecodeOpenDT_HappyPath(t *testing.T) {
 		t.Fatalf("%+v", dt)
 	}
 }
-
-func uint16Ptr(v uint16) *uint16 { return &v }

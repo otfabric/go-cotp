@@ -51,7 +51,7 @@ func TestCR_MarshalBinary_WithParams(t *testing.T) {
 		ClassOption:     0,
 		CallingSelector: []byte{0x01, 0x02},
 		CalledSelector:  []byte{0x03},
-		TPDUSize:        bytePtr(0x07),
+		TPDUSize:        new(byte(0x07)),
 	}
 	out, err := cr.MarshalBinary()
 	if err != nil {
@@ -148,5 +148,3 @@ func TestCC_MarshalBinary_ParamValueTooLong(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
-
-func bytePtr(b byte) *byte { return &b }
