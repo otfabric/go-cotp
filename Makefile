@@ -74,10 +74,7 @@ coverage-pkg-check: coverage ## Fail when a package is below COVER_PKG_MIN
 	for (p in s) { v = 100 * c[p] / s[p]; if (v < m) { printf "%s: %.1f%% < %s%%\n", p, v, m; bad = 1 } } exit bad }' coverage.out
 
 fuzz: ## Run every Fuzz target for FUZZTIME (targets discovered, never listed)
-	@for t in $$($(GO) test -list '^Fuzz' $(PKGS) | grep '^Fuzz'); do \
-		echo "fuzz $$t"; \
-		$(GO) test -run '^$$' -fuzz "^$$t$$" -fuzztime $(FUZZTIME) $(PKGS) || exit 1; \
-	done
+	@GO='$(GO)' FUZZTIME='$(FUZZTIME)' scripts/fuzz.sh $(PKGS)
 
 fuzz-decode: ## Run Decode fuzz target
 	@echo "Running Decode fuzz target..."
