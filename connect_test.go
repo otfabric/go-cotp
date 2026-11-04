@@ -270,30 +270,6 @@ func TestConnect_WrongSizeSelection(t *testing.T) {
 	}
 }
 
-func TestConnect_MismatchedReturnedSelector(t *testing.T) {
-	c1, c2 := net.Pipe()
-	defer func() { _ = c2.Close() }()
-	go func() {
-		cr := readPeerCR(t, c2)
-		cc := &CC{
-			DestinationRef: cr.SourceRef,
-			SourceRef:      2,
-			ClassOption:    0,
-			CalledSelector: []byte{0xFF},
-			TPDUSize:       new(uint8(0x0A)),
-		}
-		writeTPDU(t, c2, mustMarshal(t, cc))
-	}()
-
-	_, err := Connect(context.Background(), c1, ClientConfig{
-		RemoteSelector: []byte{0x02},
-		MaxTPDULength:  1024,
-	})
-	if !errors.Is(err, ErrHandshake) {
-		t.Fatalf("err = %v, want ErrHandshake", err)
-	}
-}
-
 func TestConnect_MalformedCOTP(t *testing.T) {
 	c1, c2 := net.Pipe()
 

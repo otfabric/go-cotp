@@ -166,12 +166,21 @@ func Accept(ctx context.Context, conn net.Conn, cfg ServerConfig) (*Conn, error)
 		}
 	}()
 
+	responding := copyBytes(cfg.LocalSelector) // nil → omit
+	var calling []byte
+	if cfg.EchoSelectors {
+		calling = copyBytes(cr.CallingSelector)
+		if responding == nil {
+			responding = copyBytes(cr.CalledSelector)
+		}
+	}
 	cc := &CC{
 		CDT:                  0,
 		DestinationRef:       cr.SourceRef,
 		SourceRef:            localRef,
 		ClassOption:          0,
-		CalledSelector:       copyBytes(cfg.LocalSelector), // nil → omit
+		CallingSelector:      calling,
+		CalledSelector:       responding,
 		TPDUSize:             sel.StandardCode,
 		PreferredMaxTPDUSize: sel.PreferredUnits,
 		UserData:             copyBytes(decision.ConnectData),
@@ -189,7 +198,7 @@ func Accept(ctx context.Context, conn net.Conn, cfg ServerConfig) (*Conn, error)
 		MaxTPDULength:   sel.Effective,
 		LocalRef:        localRef,
 		RemoteRef:       cr.SourceRef,
-		LocalSelector:   copyBytes(cfg.LocalSelector),
+		LocalSelector:   copyBytes(responding),
 		RemoteSelector:  copyBytes(cr.CallingSelector),
 		PeerConnectData: copyBytes(cr.UserData),
 	}

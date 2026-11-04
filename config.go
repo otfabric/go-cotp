@@ -32,6 +32,13 @@ type ServerConfig struct {
 	// Indication fields are defensive copies (safe to retain).
 	OnConnect   func(context.Context, ConnectIndication) (AcceptDecision, error)
 	SizeProfile SizeProfile
+	// EchoSelectors returns the CR's transport selectors in the CC
+	// (X.224 §13.3.4: "If a Transport-Selector is given in the request it
+	// may be returned in the confirmation"): the calling selector as 0xC1
+	// and, as the responding selector 0xC2, LocalSelector when non-nil,
+	// otherwise the CR's called selector. A selector absent from the CR
+	// stays absent. False (the default) sends only LocalSelector, as before.
+	EchoSelectors bool
 }
 
 // ConnectIndication is presented to server connection policy.
@@ -57,6 +64,10 @@ type AcceptDecision struct {
 
 // NegotiatedParameters are frozen after a successful CR/CC handshake.
 // All slices are defensive copies. Selector nil means absent; non-nil empty means present len 0.
+// On the client RemoteSelector is the CC's responding selector when the CC
+// carries one (it may differ from ClientConfig.RemoteSelector), otherwise
+// the requested one; on the server LocalSelector is the responding selector
+// sent in the CC and RemoteSelector the CR's calling selector.
 type NegotiatedParameters struct {
 	Class           Class
 	MaxTPDULength   int

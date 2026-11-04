@@ -132,9 +132,9 @@ func Connect(ctx context.Context, conn net.Conn, cfg ClientConfig) (*Conn, error
 	if err := validateCCParameters(cc.Parameters); err != nil {
 		return nil, err
 	}
-	if err := validateClientCCSelector(cfg.RemoteSelector, cc.CalledSelector); err != nil {
-		return nil, err
-	}
+	// 0xC2 in a CC is the responding selector (X.224 §13.3.4), which need
+	// not equal the called selector: a differing one is kept as the peer's
+	// selector, not refused.
 	if len(cc.UserData) > MaxConnectDataLength {
 		return nil, fmt.Errorf("CC connect data length %d > %d: %w", len(cc.UserData), MaxConnectDataLength, ErrHandshake)
 	}
