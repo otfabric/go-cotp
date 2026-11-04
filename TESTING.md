@@ -21,7 +21,7 @@ All tests are in the root package and need no network beyond loopback, no Docker
 
 CI (`.github/workflows/ci.yml`) runs the shared go-ci workflow on Go 1.26 and 1.27 with the race detector, coverage minimum 90, govulncheck and 10 seconds per fuzz target, a `package-coverage` job (`make coverage-pkg-check`), and a `closure-gates` job: module verify, staticcheck and the fuzz seed corpus.
 
-`.github/workflows/nightly.yml` runs every Fuzz target for 5 minutes and the chaos tests with 200 seeds under the race detector. A failing fuzz input is uploaded as an artifact.
+`.github/workflows/nightly.yml` runs every Fuzz target for 5 minutes and the chaos tests with 200 seeds under the race detector. A failing fuzz input is uploaded as an artifact. `make fuzz` runs `scripts/fuzz.sh`, which treats a target that fails only with "context deadline exceeded" at the end of `-fuzztime` and wrote no failing input as a pass: Go before 1.28 reports that spuriously ([golang/go#75804](https://github.com/golang/go/issues/75804)). Remove the workaround once the minimum Go version is 1.28.
 
 ## Where things are tested
 
