@@ -1,5 +1,24 @@
 # go-cotp Releases
 
+## v1.3.0
+
+**Date:** 2026-11-04
+**Previous release:** v1.2.0
+
+### Added
+
+- `ServerConfig.EchoSelectors`: the CC returns the CR's calling selector (0xC1) and, as the responding selector (0xC2), `LocalSelector` or else the CR's called selector, as libiec61850 and iec61850-rust servers do (X.224 §13.3.4: a selector given in the request "may be returned in the confirmation"). A selector absent from the CR stays absent. Off by default; go-mms turns it on for MMS servers.
+
+### Changed
+
+- A client no longer fails the handshake when the CC's 0xC2 differs from `ClientConfig.RemoteSelector`. In a CC that parameter is the *responding* transport selector (X.224 §13.3.4), which need not equal the called one; it is kept as `Negotiated().RemoteSelector`. IEDs that answer a called `0001` with `00000001` connected with other stacks but were refused by go-cotp once a remote selector was configured.
+
+### Tests
+
+- CC selectors for every CR selector shape (absent, empty, 1, 2 and 4 octets) with and without `EchoSelectors`; a client keeping a differing responding selector; a strict server (configured `LocalSelector`) refusing an absent, mismatched or 4-octet-vs-2-octet called selector with DR reason 3 (address unknown), the failure reported in otfabric/go-iec61850#28.
+
+---
+
 ## v1.2.0
 
 **Date:** 2026-11-03

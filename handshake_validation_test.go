@@ -118,17 +118,6 @@ func TestHandshakeSelectors(t *testing.T) {
 			t.Fatalf("err=%v", err)
 		}
 	})
-	t.Run("case_24_cc_selector_mismatch", func(t *testing.T) {
-		err := validateClientCCSelector([]byte{1, 2}, []byte{1, 3})
-		if !errors.Is(err, ErrHandshake) {
-			t.Fatalf("err=%v", err)
-		}
-	})
-	t.Run("cc_selector_omission_ok", func(t *testing.T) {
-		if err := validateClientCCSelector([]byte{1, 2}, nil); err != nil {
-			t.Fatal(err)
-		}
-	})
 }
 
 func TestHandshakeCallbackAndEnums(t *testing.T) {

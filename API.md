@@ -40,7 +40,7 @@ func (c *Conn) RemoteAddr() net.Addr
 | Type | Notes |
 |------|--------|
 | `ClientConfig` | Selectors, `MaxTPDULength` / `MaxTSDULength`, `ConnectData` (≤32), `SizeProfile` |
-| `ServerConfig` | `LocalSelector` nil vs empty semantics; optional `OnConnect` policy |
+| `ServerConfig` | `LocalSelector` nil vs empty semantics; optional `OnConnect` policy; `EchoSelectors` returns the CR's selectors in the CC |
 | `SizeProfileRFC1006Compat` | Default; standard `0xC0` path |
 | `SizeProfilePreferredMaximum` | Dual-offer / `0xF0` preferred-max path |
 | `NegotiatedParameters` | Frozen after handshake; slices are defensive copies; nil selector = absent |

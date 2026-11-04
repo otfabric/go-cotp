@@ -123,23 +123,6 @@ func validateServerCalledSelector(localSelector, crCalled []byte) error {
 	return nil
 }
 
-// validateClientCCSelector implements client CC selector echo validation.
-// remoteConfigured nil → no equality requirement; retain any returned selector.
-// When remoteConfigured is present and CC returns a selector, they must match.
-// CC omission is allowed.
-func validateClientCCSelector(remoteConfigured, ccResponding []byte) error {
-	if remoteConfigured == nil {
-		return nil
-	}
-	if ccResponding == nil {
-		return nil
-	}
-	if !bytes.Equal(remoteConfigured, ccResponding) {
-		return fmt.Errorf("CC selector mismatch: %w", ErrHandshake)
-	}
-	return nil
-}
-
 func validateConnectDataLength(data []byte) error {
 	if len(data) > MaxConnectDataLength {
 		return fmt.Errorf("connect data length %d > %d: %w", len(data), MaxConnectDataLength, ErrInvalidConfig)

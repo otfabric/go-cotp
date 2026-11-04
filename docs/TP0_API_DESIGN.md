@@ -138,6 +138,10 @@ type ServerConfig struct {
     // OnConnect decides accept/reject. Nil = defaultAutoAccept (§4).
     // Indication fields are defensive copies (safe to retain).
     OnConnect func(context.Context, ConnectIndication) (AcceptDecision, error)
+    // EchoSelectors returns the CR's calling selector (0xC1) and, as the
+    // responding selector (0xC2), LocalSelector or else the CR's called
+    // selector in the CC (X.224 §13.3.4 "may be returned"). Default false.
+    EchoSelectors bool
     // SizeProfile governs CC encoding and omitted-size acceptance policy (§5.6–§5.8).
     // Unknown values → ErrInvalidConfig. CR parser always accepts valid 0xC0/0xF0.
     SizeProfile SizeProfile
@@ -425,9 +429,8 @@ open ──Close──► closing ──► closed
 
 | Condition | Action |
 | --- | --- |
-| CC contains responding/called selector **and** `ClientConfig.RemoteSelector` was present | returned selector **must equal** `RemoteSelector`; mismatch → handshake failure |
+| CC contains a responding selector (`0xC2`) | accept and retain it as peer metadata, whether or not it equals `RemoteSelector`: in a CC `0xC2` names the *responding* TSAP, which X.224 §13.3.4 does not require to equal the called one (v1.3.0; before, a mismatch failed the handshake) |
 | CC omits the selector | accept (echo optional) |
-| `ClientConfig.RemoteSelector` was absent | retain any returned selector as peer metadata |
 
 `NegotiatedParameters.RemoteSelector`: returned CC selector when present, otherwise requested `ClientConfig.RemoteSelector`.
 
@@ -717,7 +720,7 @@ Flooring (`configured / 128`) stays in **service** `preferredUnitsAndEffective` 
 | 21 | Units > 511 in generic codec | accepted |
 | 22 | Units > 511 in ITOT service | handshake reject |
 | 23 | Server selector set, CR selector absent | default reject |
-| 24 | CC selector mismatched | client handshake fails |
+| 24 | CC responding selector differs from the called one | accepted; `Negotiated().RemoteSelector` is the responding selector |
 | 25 | Context expires after first DT | whole Conn aborts |
 | 25a | Context expires on an idle read / stalled first write | `ctx.Err()`, Conn usable, other direction unaffected |
 | 26 | Local `Close` wakes blocked read | `ErrClosed` |
