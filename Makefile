@@ -13,7 +13,10 @@ COVERAGE_MIN := 90
 COVER_PKG_MIN := 92
 FUZZTIME ?= 5s
 
-.PHONY: help test test-race test-short vet lint lint-ci fmt vuln fuzz fuzz-decode fuzz-parse bench tidy check check-full clean coverage coverage-html coverage-clean coverage-check coverage-pkg-check cross
+# docsync release of docs-check (DOC-008).
+DOCSYNC_VERSION := v0.2.0
+
+.PHONY: help test test-race test-short vet lint lint-ci fmt vuln fuzz fuzz-decode fuzz-parse bench tidy check check-full clean coverage coverage-html coverage-clean coverage-check coverage-pkg-check cross docs-check
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_.-]+:.*## / {printf "%-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -95,11 +98,15 @@ bench: ## Run benchmarks
 	@echo "Running benchmarks..."
 	$(GO) test -run=^$$ -bench=. -benchmem $(PKGS)
 
+# The documents against the code (DOC-008): docsync, as docs-check.yml runs it.
+docs-check: ## Check that the documents agree with the code (docsync)
+	@go run github.com/otfabric/docsync@$(DOCSYNC_VERSION) check .
+
 tidy: ## Tidy module files
 	@echo "Tidying module files..."
 	$(GO) mod tidy
 
-check: fmt tidy vet lint lint-ci vuln test test-race coverage-check coverage-pkg-check ## Run core release checks
+check: fmt tidy vet lint lint-ci vuln test test-race coverage-check coverage-pkg-check docs-check ## Run core release checks
 	@echo "Check done."
 
 check-full: check ## Alias for check
