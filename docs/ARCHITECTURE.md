@@ -119,11 +119,11 @@ Today this repository provides (1) and the TP0 (Class 0 / RFC 1006) subset of (2
 
 Owns all X.224 wire structures: CR, CC, DR, DC, DT, ED, AK, EA, RJ, ER — type codes, fixed/variable parts, LI, references, class/options, selectors, TPDU-size and preferred-max size, checksum/additional options, normal/extended formats, sequence/EOT/credit, reason/reject-cause, user-data placement, validation, unknown/duplicate parameter policy, deterministic encoding, malformed-input protection.
 
-Conceptual API (names may evolve):
+Codec API (see [docs/api](api/go-cotp.md) for the full reference):
 
 ```go
-tpdu, err := cotp.DecodeTPDU(raw)
-raw, err := tpdu.MarshalBinary()
+d, err := cotp.Decode(raw)          // d.Type names the TPDU; exactly one of d.CR … d.RJ is non-nil
+out, err := d.CR.MarshalBinary()    // each TPDU type encodes itself
 ```
 
 Codecs remain independently useful for inspection, fingerprinting, debugging, fixtures, analyzers, and custom engines.
@@ -268,7 +268,7 @@ client, err := mms.NewClient(association, mmsConfig)
 | Concern | Owner |
 | --- | --- |
 | Host/port, DNS, reconnect, interface, proxies, app connect timeout | Upper consumer (usually) |
-| Optional `cotp.Dial` convenience | go-cotp (optional helper) |
+| Dialing (no `Dial` helper; `cotp.Connect` takes an established `net.Conn`) | Upper consumer |
 | Core COTP engine input | Existing `net.Conn` / duplex stream |
 | TLS config, trust, hostname verify, client certs | Consumer — TLS sits **TCP → TLS → TPKT → COTP** |
 | Operation context / policy | Consumer |
