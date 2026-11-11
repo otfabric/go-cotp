@@ -15,9 +15,11 @@ permissions:
 
 jobs:
   ci:
-    uses: otfabric/.github/.github/workflows/go-ci.yml@v3.3.0
+    uses: otfabric/.github/.github/workflows/go-ci.yml@v3.6.0
     with:
-      policy-version: v1.4.2
+      policy-version: v1.5.0
+      # The shared default (v2.1.6) predates Go 1.26; the version `make lint` is checked with.
+      golangci-lint-version: v2.15.0
       run-govulncheck: true
       coverage-min: "90"
       fuzz-time: 10s
@@ -46,7 +48,7 @@ jobs:
       - uses: actions/checkout@v7
       # Tooling job: use a current Go so @latest analyzers that require newer
       # toolchains can install. Module minimum remains go.mod (1.26).
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.26'
           cache: true
