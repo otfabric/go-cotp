@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -86,30 +87,35 @@ func waitRead(t *testing.T, ch <-chan readResult, d time.Duration) readResult {
 // expires while the write is stalled (nothing reached the stream).
 func TestDuplex_ReadSurvivesWriteTimeout(t *testing.T) {
 	t.Parallel()
-	cli, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
-	reads := goRead(srv, context.Background())
-	time.Sleep(10 * time.Millisecond) // let the reader block
+	synctest.Test(t, func(t *testing.T) {
+		cli, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
+		reads := goRead(srv, context.Background())
+		synctest.Wait() // the reader is blocked on the stream
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
-	defer cancel()
-	// cli is not reading: on net.Pipe the write cannot move a single octet.
-	err := srv.WriteTSDU(ctx, []byte("request"))
-	if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrClosed) {
-		t.Fatalf("WriteTSDU = %v, want bare DeadlineExceeded", err)
-	}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+		defer cancel()
+		// cli is not reading: on net.Pipe the write cannot move a single octet.
+		err := srv.WriteTSDU(ctx, []byte("request"))
+		if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrClosed) {
+			t.Fatalf("WriteTSDU = %v, want bare DeadlineExceeded", err)
+		}
 
-	select {
-	case r := <-reads:
-		t.Fatalf("reader disturbed by write timeout: %v, %v", r.b, r.err)
-	case <-time.After(30 * time.Millisecond):
-	}
-	if err := cli.WriteTSDU(context.Background(), []byte("response")); err != nil {
-		t.Fatal(err)
-	}
-	r := waitRead(t, reads, 2*time.Second)
-	if r.err != nil || string(r.b) != "response" {
-		t.Fatalf("ReadTSDU = %q, %v", r.b, r.err)
-	}
+		// Every goroutine has settled: a reader cut by the write's deadline
+		// would have delivered its error by now.
+		synctest.Wait()
+		select {
+		case r := <-reads:
+			t.Fatalf("reader disturbed by write timeout: %v, %v", r.b, r.err)
+		default:
+		}
+		if err := cli.WriteTSDU(context.Background(), []byte("response")); err != nil {
+			t.Fatal(err)
+		}
+		r := waitRead(t, reads, 2*time.Second)
+		if r.err != nil || string(r.b) != "response" {
+			t.Fatalf("ReadTSDU = %q, %v", r.b, r.err)
+		}
+	})
 }
 
 // A reader blocked in ReadTSDU survives many concurrent WriteTSDU calls whose
@@ -198,28 +204,33 @@ func TestDuplex_WriteKeepsReadDeadline(t *testing.T) {
 // whose context expires.
 func TestDuplex_WriteSurvivesReadTimeout(t *testing.T) {
 	t.Parallel()
-	cli, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
-	writeErr := make(chan error, 1)
-	go func() { writeErr <- srv.WriteTSDU(context.Background(), []byte("request")) }()
-	time.Sleep(10 * time.Millisecond) // writer is stalled: cli is not reading
+	synctest.Test(t, func(t *testing.T) {
+		cli, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
+		writeErr := make(chan error, 1)
+		go func() { writeErr <- srv.WriteTSDU(context.Background(), []byte("request")) }()
+		synctest.Wait() // the writer is stalled: cli is not reading
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
-	defer cancel()
-	if _, err := srv.ReadTSDU(ctx); !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrClosed) {
-		t.Fatalf("ReadTSDU = %v, want bare DeadlineExceeded", err)
-	}
-	select {
-	case err := <-writeErr:
-		t.Fatalf("writer disturbed by read timeout: %v", err)
-	case <-time.After(30 * time.Millisecond):
-	}
-	b, err := cli.ReadTSDU(context.Background())
-	if err != nil || string(b) != "request" {
-		t.Fatalf("peer ReadTSDU = %q, %v", b, err)
-	}
-	if err := <-writeErr; err != nil {
-		t.Fatalf("WriteTSDU: %v", err)
-	}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+		defer cancel()
+		if _, err := srv.ReadTSDU(ctx); !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrClosed) {
+			t.Fatalf("ReadTSDU = %v, want bare DeadlineExceeded", err)
+		}
+		// Every goroutine has settled: a writer cut by the read's deadline
+		// would have delivered its error by now.
+		synctest.Wait()
+		select {
+		case err := <-writeErr:
+			t.Fatalf("writer disturbed by read timeout: %v", err)
+		default:
+		}
+		b, err := cli.ReadTSDU(context.Background())
+		if err != nil || string(b) != "request" {
+			t.Fatalf("peer ReadTSDU = %q, %v", b, err)
+		}
+		if err := <-writeErr; err != nil {
+			t.Fatalf("WriteTSDU: %v", err)
+		}
+	})
 }
 
 // A completing read must not clear a concurrent writer's deadline.
@@ -262,60 +273,71 @@ func TestDuplex_ReadKeepsWriteDeadline(t *testing.T) {
 // not abort the connection.
 func TestDuplex_QueuedWriterHonoursContext(t *testing.T) {
 	t.Parallel()
-	cli, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
-	first := make(chan error, 1)
-	go func() { first <- srv.WriteTSDU(context.Background(), []byte("first")) }()
-	time.Sleep(10 * time.Millisecond)
+	synctest.Test(t, func(t *testing.T) {
+		cli, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
+		first := make(chan error, 1)
+		go func() { first <- srv.WriteTSDU(context.Background(), []byte("first")) }()
+		synctest.Wait() // the first writer holds the write direction, stalled
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel()
-	if err := srv.WriteTSDU(ctx, []byte("second")); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("queued WriteTSDU = %v, want DeadlineExceeded", err)
-	}
-	if b, err := cli.ReadTSDU(context.Background()); err != nil || string(b) != "first" {
-		t.Fatalf("peer = %q, %v", b, err)
-	}
-	if err := <-first; err != nil {
-		t.Fatal(err)
-	}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+		if err := srv.WriteTSDU(ctx, []byte("second")); !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrClosed) {
+			t.Fatalf("queued WriteTSDU = %v, want bare DeadlineExceeded", err)
+		}
+		if srv.terminalKind() != terminalNone {
+			t.Fatal("a queued writer that gave up aborted the connection")
+		}
+		if b, err := cli.ReadTSDU(context.Background()); err != nil || string(b) != "first" {
+			t.Fatalf("peer = %q, %v", b, err)
+		}
+		if err := <-first; err != nil {
+			t.Fatal(err)
+		}
 
-	// Same for a queued reader.
-	reads := goRead(cli, context.Background())
-	time.Sleep(10 * time.Millisecond)
-	rctx, rcancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer rcancel()
-	if _, err := cli.ReadTSDU(rctx); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("queued ReadTSDU = %v, want DeadlineExceeded", err)
-	}
-	if err := srv.WriteTSDU(context.Background(), []byte("ok")); err != nil {
-		t.Fatal(err)
-	}
-	if r := waitRead(t, reads, 2*time.Second); r.err != nil || string(r.b) != "ok" {
-		t.Fatalf("ReadTSDU = %q, %v", r.b, r.err)
-	}
+		// Same for a queued reader.
+		reads := goRead(cli, context.Background())
+		synctest.Wait() // the first reader holds the read direction, blocked
+		rctx, rcancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer rcancel()
+		if _, err := cli.ReadTSDU(rctx); !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrClosed) {
+			t.Fatalf("queued ReadTSDU = %v, want bare DeadlineExceeded", err)
+		}
+		if cli.terminalKind() != terminalNone {
+			t.Fatal("a queued reader that gave up aborted the connection")
+		}
+		if err := srv.WriteTSDU(context.Background(), []byte("ok")); err != nil {
+			t.Fatal(err)
+		}
+		if r := waitRead(t, reads, 2*time.Second); r.err != nil || string(r.b) != "ok" {
+			t.Fatalf("ReadTSDU = %q, %v", r.b, r.err)
+		}
+	})
 }
 
 // A context cancelled (no deadline) while a write is stalled interrupts only
 // that write.
 func TestDuplex_CancelInterruptsOnlyItsDirection(t *testing.T) {
 	t.Parallel()
-	cli, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
-	reads := goRead(srv, context.Background())
+	synctest.Test(t, func(t *testing.T) {
+		cli, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
+		reads := goRead(srv, context.Background())
 
-	ctx, cancel := context.WithCancel(context.Background())
-	writeErr := make(chan error, 1)
-	go func() { writeErr <- srv.WriteTSDU(ctx, []byte("x")) }()
-	time.Sleep(10 * time.Millisecond)
-	cancel()
-	if err := <-writeErr; !errors.Is(err, context.Canceled) || errors.Is(err, ErrClosed) {
-		t.Fatalf("WriteTSDU = %v, want bare Canceled", err)
-	}
-	if err := cli.WriteTSDU(context.Background(), []byte("y")); err != nil {
-		t.Fatal(err)
-	}
-	if r := waitRead(t, reads, 2*time.Second); r.err != nil || string(r.b) != "y" {
-		t.Fatalf("ReadTSDU = %q, %v", r.b, r.err)
-	}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		writeErr := make(chan error, 1)
+		go func() { writeErr <- srv.WriteTSDU(ctx, []byte("x")) }()
+		synctest.Wait() // the reader is blocked and the write is stalled on the stream
+		cancel()
+		if err := <-writeErr; !errors.Is(err, context.Canceled) || errors.Is(err, ErrClosed) {
+			t.Fatalf("WriteTSDU = %v, want bare Canceled", err)
+		}
+		if err := cli.WriteTSDU(context.Background(), []byte("y")); err != nil {
+			t.Fatal(err)
+		}
+		if r := waitRead(t, reads, 2*time.Second); r.err != nil || string(r.b) != "y" {
+			t.Fatalf("ReadTSDU = %q, %v", r.b, r.err)
+		}
+	})
 }
 
 // encodeTagged builds a self-checking TSDU: sender, seq, length, CRC, body.

@@ -11,6 +11,13 @@ import (
 // Minimal format (no DestinationRef, no variable part): LI=2, 2-octet fixed part.
 // Normal format: LI=4+len(variable), 4-octet fixed part, then variable, then user data.
 // UserData nil or zero-length is valid (empty payload). Deterministic for same DT.
+//
+// MarshalBinary writes what it is given. TPDUNR is written as its low 7 bits.
+// Parameters are written in both formats, although X.224 13.7.1 a) gives the
+// class 0 and 1 format no variable part, and a variable part of odd length
+// makes LI odd. DecodeDT rejects an odd LI (ErrUnsupportedDTVariant) and
+// reads every LI of 4 or more as the normal format, so it does not return
+// such a DT as it was built.
 func (d *DT) MarshalBinary() ([]byte, error) {
 	if d == nil {
 		return nil, fmt.Errorf("marshal DT: %w", ErrNilReceiver)

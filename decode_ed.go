@@ -48,7 +48,7 @@ func DecodeED(b []byte) (*ED, error) {
 		}
 		ed.Parameters = params
 	}
-	ed.UserData = b[headerLen:]
+	ed.UserData = b[headerLen:len(b):len(b)]
 	if len(ed.UserData) < MinEDUserDataLen || len(ed.UserData) > MaxEDUserDataLen {
 		return nil, fmt.Errorf("decode ED: user data length %d: %w", len(ed.UserData), ErrInvalidEDUserDataLength)
 	}

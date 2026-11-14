@@ -10,12 +10,19 @@ import (
 // DT minimal: fixed part 2 octets (octet 2 = DT+ROA, octet 3 = TPDU-NR+EOT). LI=2.
 const dtMinimalFixedLength = 2
 
-// DT normal (class 2–4): fixed part 4 octets (DT+ROA, DST-REF, TPDU-NR+EOT). LI>=4.
+// DT normal (class 2–4): fixed part 4 octets (DT+ROA, DST-REF, TPDU-NR+EOT). LI>=4 and even.
 const dtNormalFixedLength = 4
 
-// DecodeDT decodes a Data TPDU from b. v1 supports minimal (LI=2) and normal (LI>=4) formats.
-// Extended format (e.g. LI=7 with 7-octet fixed) is rejected with ErrUnsupportedDTVariant.
-// Returned UserData may alias b; see package doc.
+// DecodeDT decodes a Data TPDU from b. v1 supports the class 0 and 1 format
+// (LI=2) and the normal class 2 to 4 format (an even LI of 4 or more).
+//
+// The extended class 2 to 4 format has a 7-octet fixed part, so its LI is odd:
+// X.224 §13.7.4 NOTE states the rule that an even LI is the normal format and
+// an odd LI the extended one. DecodeDT follows it: an odd LI of 5 or more is
+// rejected with ErrUnsupportedDTVariant, as are LI 0, 1 and 3.
+//
+// Returned UserData and Parameter values alias b and have no capacity beyond
+// their own octets; see package doc.
 func DecodeDT(b []byte) (*DT, error) {
 	if len(b) < MinHeaderLength {
 		return nil, fmt.Errorf("decode DT: %w", ErrTooShort)
@@ -54,9 +61,10 @@ func DecodeDT(b []byte) (*DT, error) {
 			}
 			dt.Parameters = params
 		}
-		dt.UserData = b[headerLen:]
-	case li >= 4:
-		// Normal (class 2–4): fixed part b[1..4]
+		dt.UserData = b[headerLen:len(b):len(b)]
+	case li >= 4 && li%2 == 0:
+		// Normal (class 2–4): fixed part b[1..4]. An odd LI is the extended
+		// format (X.224 §13.7.4 NOTE) and falls through to the default case.
 		if headerLen < 1+dtNormalFixedLength {
 			return nil, fmt.Errorf("decode DT: %w", ErrUnsupportedDTVariant)
 		}
@@ -74,7 +82,7 @@ func DecodeDT(b []byte) (*DT, error) {
 			}
 			dt.Parameters = params
 		}
-		dt.UserData = b[headerLen:]
+		dt.UserData = b[headerLen:len(b):len(b)]
 	default:
 		return nil, fmt.Errorf("decode DT: LI=%d: %w", li, ErrUnsupportedDTVariant)
 	}

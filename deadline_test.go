@@ -7,6 +7,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -133,23 +134,30 @@ func TestDirectionDeadline_CancelRaceNeverPoisons(t *testing.T) {
 
 func TestOpLock_HonoursContext(t *testing.T) {
 	t.Parallel()
-	l := newOpLock()
-	if err := l.lock(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
-	if err := l.lock(ctx); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("contended lock = %v", err)
-	}
-	got := make(chan error, 1)
-	go func() { got <- l.lock(context.Background()) }()
-	time.Sleep(5 * time.Millisecond)
-	l.unlock()
-	if err := <-got; err != nil {
-		t.Fatal(err)
-	}
-	l.unlock()
+	synctest.Test(t, func(t *testing.T) {
+		l := newOpLock()
+		if err := l.lock(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer cancel()
+		if err := l.lock(ctx); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("contended lock = %v", err)
+		}
+		got := make(chan error, 1)
+		go func() { got <- l.lock(context.Background()) }()
+		synctest.Wait() // the second caller is waiting for the lock
+		select {
+		case err := <-got:
+			t.Fatalf("lock acquired while held: %v", err)
+		default:
+		}
+		l.unlock()
+		if err := <-got; err != nil {
+			t.Fatal(err)
+		}
+		l.unlock()
+	})
 }
 
 func TestArmHandshake_NilConn(t *testing.T) {

@@ -1,5 +1,42 @@
 # go-cotp Releases
 
+## v1.3.1
+
+**Date:** 2026-11-14
+**Previous release:** v1.3.0
+
+No exported identifier is added, removed or changed. The entries under "Changed" alter which error a call returns, or which input a decoder accepts, in the cases they name.
+
+### Changed
+
+- **Memory of a read.** `ReadTSDU` reassembles a TSDU in one buffer whose capacity never exceeds `MaxTSDULength`, whatever the size and number of the segments. One call holds less than twice `MaxTSDULength`, plus one TPKT packet, and a partly received TSDU is held until the context of that call ends. The doc comment of `ReadTSDU`, LIMITATIONS.md and the limits table in SECURITY.md state the bound. The returned slice is the caller's, as before; it has no capacity beyond its length.
+- **`DecodeDT` follows the LI rule of X.224 §13.7.4 NOTE:** an even LI is the normal class 2 to 4 format, an odd LI the extended one, which this codec does not decode. A DT with an odd LI of 5 or more is rejected with `ErrUnsupportedDTVariant` by `DecodeDT`, `Decode`, `DecodeWithRaw` and `ExtractUserData`, as README.md, API.md, ERRORS.md and LIMITATIONS.md describe for the extended format. LI 2 and an even LI of 4 or more decode as before. The TP0 service accepts only LI 2 and is not affected. The encoder is unchanged: `(*DT).MarshalBinary` does not refuse a variable part of odd length, and `DecodeDT` rejects the DT it then builds (API.md, "Encode").
+- **A connection timeout reported by the operating system is a disconnect.** When a read or a write fails with `ETIMEDOUT` (keep-alive or retransmission without an answer), `ReadTSDU`, `WriteTSDU`, `Connect` and `Accept` return an error that matches `ErrDisconnected`, a `*DisconnectError` carrying the cause. Before, that failure matched `ErrClosed` and `context.DeadlineExceeded` when the context had a deadline, although the deadline had not passed, and matched no sentinel when it had none. Only a deadline that go-cotp armed on the stream for the caller's context is reported as that context ending, which is what ERRORS.md reserves `ErrClosed` with a context error for.
+- **Decoded slices are clipped.** Selectors, parameter values and user data returned by the decoders alias the input, as documented, and now have no capacity beyond their own octets: an `append` to one of them allocates instead of writing into the input buffer or into another decoded field.
+- **The zero `Conn`.** `ReadTSDU` and `WriteTSDU` on a `Conn` that does not come from `Connect` or `Accept` return `ErrClosed` at once. Before, they waited for their context to end.
+
+### Documentation
+
+- SECURITY.md has a table of resource limits: the limit, its default, where it is enforced and the test that pins it. It also says what go-cotp leaves to the caller: the number of connections, and handshake and idle time, which only the caller's context bounds. The server example in README.md gives `Accept` a context with a deadline.
+- Corrected statements. The TPDU size codes 0x0C to 0x10 are accepted in class 0 since v1.0.1; docs/COMPLIANCE.md (B-13) and docs/TP0_API_DESIGN.md (§5.3 and the examples derived from it) said they were refused, and now record the deviation from X.224 §13.3.4 b). The service validates the class and option octet (B-11). Class 0 has a state machine and segmentation (COMPLIANCE.md, section D). `ErrUnknownTPDUType` is not returned (ERRORS.md). LIMITATIONS.md no longer names old go-cotp versions for its consumers.
+- Recorded as it is, with no change in behaviour: the encoders write CDT as its low 4 bits and TPDU-NR as its low 7 bits; `(*DT).MarshalBinary` writes parameters also without a `DestinationRef`; the decoders ignore octets after the header of a DC, ER, AK, EA or RJ; over TLS a `WriteTSDU` that timed out can leave the `Conn` open while the next write fails (LIMITATIONS.md).
+- Doc comments: `Close` (safe to call more than once and from multiple goroutines; returns `ErrClosed` or the first terminal cause, never nil), `ServerConfig.OnConnect` (runs on the goroutine that called `Accept`, between the CR and the CC, and stalls only its own handshake), `Conn` (its zero value), `ReadTSDU` (memory, and ownership of the result).
+
+### Tests
+
+- An allocation budget for `MaxTSDULength` (`TestReadTSDU_PendingReassemblyBudget`): segments of one octet up to one octet below the limit, then the memory the call holds and the memory it allocated, for the default limit and for 64 KiB.
+- The decoder fuzz targets assert invariants: a documented sentinel on failure; on success clipped sub-slices of the input, a round trip through the encoder that is deeply equal, and, for the types with one encoding, the octets that were read. A table walks every prefix of the golden fixtures.
+- The lifecycle contract matrix, listed row by row in TESTING.md: concurrent `Close`, `Close` during a write, a handshake whose context ends, a slow `OnConnect`, every failing path of `Connect`.
+- Tests that waited with `time.Sleep` for a call to block synchronise on events: `testing/synctest` over `net.Pipe`, or a stream that reports when its reader waits.
+- The test package compiles for 32-bit platforms, and the nightly workflow runs the suite with `GOARCH=386`.
+- The TSDU benchmarks keep their peer goroutine out of the timed loop and state their scope.
+
+### CI
+
+- The release workflow builds, vets and tests go-mms, go-iec61850 and go-s7comm against the candidate before it creates the tag (`consumers`).
+
+---
+
 ## v1.3.0
 
 **Date:** 2026-11-04

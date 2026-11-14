@@ -5,6 +5,7 @@ package cotp
 import (
 	"bytes"
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -296,149 +297,133 @@ func FuzzDecode(f *testing.F) {
 				d.DC != nil || d.ER != nil || d.ED != nil || d.AK != nil || d.EA != nil || d.RJ != nil || d.Raw != nil {
 				t.Fatalf("Decode error must return zero Decoded, got Type=%v", d.Type)
 			}
-			return
 		}
-		assertDecodedInvariant(t, d)
+		assertDecodeInvariants(t, data, d, err)
+
+		// DecodeWithRaw is Decode plus the input itself as Raw.
+		withRaw, rawErr := DecodeWithRaw(data)
+		if (rawErr == nil) != (err == nil) {
+			t.Fatalf("DecodeWithRaw err %v, Decode err %v", rawErr, err)
+		}
+		if err == nil {
+			if len(withRaw.Raw) != len(data) || (len(data) > 0 && &withRaw.Raw[0] != &data[0]) {
+				t.Fatal("DecodeWithRaw: Raw is not the input slice")
+			}
+			withRaw.Raw = nil
+			if !reflect.DeepEqual(withRaw, d) {
+				t.Fatal("DecodeWithRaw and Decode return different values")
+			}
+		} else if !reflect.DeepEqual(withRaw, Decoded{}) {
+			t.Fatal("DecodeWithRaw failed and returned a value")
+		}
 	})
 }
 
+// The per-type decoder targets assert the invariants of
+// assertDecodeInvariants (codec_invariants_test.go) on every input: a
+// documented sentinel on failure; on success borrowed and clipped slices, a
+// round trip through the encoder that is deeply equal, the exact octets back
+// for the types with one encoding, and agreement with Decode.
+
 func FuzzDecodeCR(f *testing.F) {
-	f.Add(minimalCR)
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = DecodeCR(data)
-	})
+	fuzzTyped(f, TypeCR, minimalCR, richTPDUs(f)["CR"])
 }
 
 func FuzzDecodeCC(f *testing.F) {
-	f.Add(minimalCC)
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = DecodeCC(data)
-	})
+	fuzzTyped(f, TypeCC, minimalCC, richTPDUs(f)["CC"])
 }
 
 func FuzzDecodeDT(f *testing.F) {
-	f.Add(minimalDT)
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = DecodeDT(data)
-	})
+	fuzzTyped(f, TypeDT, minimalDT, richTPDUs(f)["DT class 0"], richTPDUs(f)["DT normal"],
+		// Extended format (odd LI): refused, X.224 §13.7.4 NOTE.
+		[]byte{0x07, 0xF0, 0x12, 0x34, 0x00, 0x85, 0x01, 0x09})
 }
 
 func FuzzDecodeDR(f *testing.F) {
-	f.Add(minimalDR)
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = DecodeDR(data)
-	})
+	fuzzTyped(f, TypeDR, minimalDR, richTPDUs(f)["DR"])
 }
 
 func FuzzDecodeDC(f *testing.F) {
-	f.Add(minimalDC)
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = DecodeDC(data)
-	})
+	fuzzTyped(f, TypeDC, minimalDC, richTPDUs(f)["DC"])
 }
 
 func FuzzDecodeER(f *testing.F) {
-	f.Add(minimalER)
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = DecodeER(data)
-	})
+	fuzzTyped(f, TypeER, minimalER, richTPDUs(f)["ER"])
 }
 
 func FuzzDecodeED(f *testing.F) {
-	f.Add(minimalED)
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = DecodeED(data)
-	})
+	fuzzTyped(f, TypeED, minimalED, richTPDUs(f)["ED"])
 }
 
 func FuzzDecodeAK(f *testing.F) {
-	f.Add(minimalAK)
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = DecodeAK(data)
-	})
+	fuzzTyped(f, TypeAK, minimalAK, richTPDUs(f)["AK"])
 }
 
 func FuzzDecodeEA(f *testing.F) {
-	f.Add(minimalEA)
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = DecodeEA(data)
-	})
+	fuzzTyped(f, TypeEA, minimalEA, richTPDUs(f)["EA"])
 }
 
 func FuzzDecodeRJ(f *testing.F) {
-	f.Add(minimalRJ)
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = DecodeRJ(data)
-	})
+	fuzzTyped(f, TypeRJ, minimalRJ, richTPDUs(f)["RJ"])
 }
 
+// FuzzLooksLikeDoesNotPanic keeps its name for the corpus. The LooksLike
+// helpers classify by the same header checks and type masks as PeekType: at
+// most one of them answers true, the one that does names the type PeekType
+// returns, and a TPDU that Decode accepts is recognised by the helper of its
+// type.
 func FuzzLooksLikeDoesNotPanic(f *testing.F) {
 	f.Add(minimalCR)
 	f.Add(minimalDT)
 	f.Add([]byte{0xFF})
 	f.Add([]byte{})
+	for _, b := range richTPDUs(f) {
+		f.Add(b)
+	}
 	f.Fuzz(func(t *testing.T, data []byte) {
-		_ = LooksLikeCR(data)
-		_ = LooksLikeCC(data)
-		_ = LooksLikeDR(data)
-		_ = LooksLikeDC(data)
-		_ = LooksLikeDT(data)
-		_ = LooksLikeER(data)
-		_ = LooksLikeED(data)
-		_ = LooksLikeAK(data)
-		_ = LooksLikeEA(data)
-		_ = LooksLikeRJ(data)
-		_ = IsConnectionOriented(data)
+		looks := map[TPDUType]bool{
+			TypeCR: LooksLikeCR(data),
+			TypeCC: LooksLikeCC(data),
+			TypeDR: LooksLikeDR(data),
+			TypeDC: LooksLikeDC(data),
+			TypeDT: LooksLikeDT(data),
+			TypeER: LooksLikeER(data),
+			TypeED: LooksLikeED(data),
+			TypeAK: LooksLikeAK(data),
+			TypeEA: LooksLikeEA(data),
+			TypeRJ: LooksLikeRJ(data),
+		}
+		peeked, peekErr := PeekType(data)
+		// The helpers also require the header LI announces to be present.
+		headerPresent := peekErr == nil && len(data) >= 1+int(data[0])
+		for typ, yes := range looks {
+			if want := headerPresent && typ == peeked; yes != want {
+				t.Fatalf("LooksLike%s(% x) = %v; PeekType = %s, %v; header present = %v", typ, data, yes, peeked, peekErr, headerPresent)
+			}
+		}
+		connection := peekErr == nil && (peeked == TypeCR || peeked == TypeCC || peeked == TypeDR || peeked == TypeDC)
+		if got := IsConnectionOriented(data); got != connection {
+			t.Fatalf("IsConnectionOriented(% x) = %v; PeekType = %s, %v", data, got, peeked, peekErr)
+		}
+		if d, err := Decode(data); err == nil && !looks[d.Type] {
+			t.Fatalf("Decode accepts % x as %s, LooksLike%s does not", data, d.Type, d.Type)
+		}
 	})
 }
 
+// FuzzMarshalDecodeRoundTrip: whatever Decode accepts encodes again, and the
+// encoding decodes to a deeply equal value (assertDecodeInvariants).
 func FuzzMarshalDecodeRoundTrip(f *testing.F) {
 	f.Add(minimalCR)
 	f.Add(minimalCC)
 	f.Add(minimalDT)
 	f.Add(minimalDR)
 	f.Add(minimalED)
+	for _, b := range richTPDUs(f) {
+		f.Add(b)
+	}
 	f.Fuzz(func(t *testing.T, data []byte) {
 		d, err := Decode(data)
-		if err != nil {
-			return
-		}
-		var out []byte
-		switch d.Type {
-		case TypeCR:
-			out, err = d.CR.MarshalBinary()
-		case TypeCC:
-			out, err = d.CC.MarshalBinary()
-		case TypeDT:
-			out, err = d.DT.MarshalBinary()
-		case TypeDR:
-			out, err = d.DR.MarshalBinary()
-		case TypeDC:
-			out, err = d.DC.MarshalBinary()
-		case TypeER:
-			out, err = d.ER.MarshalBinary()
-		case TypeED:
-			out, err = d.ED.MarshalBinary()
-		case TypeAK:
-			out, err = d.AK.MarshalBinary()
-		case TypeEA:
-			out, err = d.EA.MarshalBinary()
-		case TypeRJ:
-			out, err = d.RJ.MarshalBinary()
-		default:
-			return
-		}
-		if err != nil {
-			// Some decoded values may not re-encode under current encode rules (e.g. ED edge cases).
-			return
-		}
-		d2, err := Decode(out)
-		if err != nil {
-			t.Fatalf("successful marshal must decode: %v", err)
-		}
-		assertDecodedInvariant(t, d2)
-		if d2.Type != d.Type {
-			t.Fatalf("round-trip type mismatch: got %v want %v", d2.Type, d.Type)
-		}
+		assertDecodeInvariants(t, data, d, err)
 	})
 }

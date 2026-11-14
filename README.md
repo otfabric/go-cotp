@@ -60,7 +60,7 @@ go-cotp/
 ├── TESTING.md         Test tiers and coverage policy
 ├── RELEASE.md         Release history
 ├── CONTRIBUTING.md    Contribution / test guidance
-└── SECURITY.md        Vulnerability reporting
+└── SECURITY.md        Vulnerability reporting, resource limits
 ```
 
 There is no `internal/` tree: service (`Connect` / `Accept` / `Conn`) and codec
@@ -77,7 +77,7 @@ boundaries are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - **In scope today (codec):**
   - Encode/decode for all ten connection-oriented TPDU types: CR, CC, DT, DR, DC, ER, ED, AK, EA, RJ
   - Variable-part parameter TLV parsing; CR/CC typed selectors and TPDU-size parameter
-  - DT minimal (class 0/1) and normal (class 2–4) formats; extended DT rejected
+  - DT minimal (class 0/1) and normal (class 2–4) formats; extended DT (odd LI) rejected
 - **Not yet / out of v1 claim:**
   - TP2, expedited data service, full RFC 2126, native CONS/CLNS
 - **Out of scope (always):**
@@ -131,7 +131,10 @@ For TLS: dial and complete `tls.Handshake` yourself, then pass the `*tls.Conn` t
 ln, err := net.Listen("tcp", ":102")
 // ...
 raw, err := ln.Accept()
-cotpConn, err := cotp.Accept(ctx, raw, cotp.ServerConfig{
+// Bound the handshake: Accept waits for the peer's CR for as long as its context allows.
+hctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+defer cancel()
+cotpConn, err := cotp.Accept(hctx, raw, cotp.ServerConfig{
     LocalSelector: []byte{0x01, 0x01},
     MaxTPDULength: 1024,
     OnConnect: func(_ context.Context, ind cotp.ConnectIndication) (cotp.AcceptDecision, error) {
@@ -141,6 +144,8 @@ cotpConn, err := cotp.Accept(ctx, raw, cotp.ServerConfig{
 })
 ```
 
+`Connect` and `Accept` have no handshake timeout of their own: with a context that has no deadline they wait for as long as the peer stays silent, on the goroutine that called them. Give them a context with a deadline, as above. The same holds for `ReadTSDU`, which keeps a partly received TSDU until its context ends. All limits are in [SECURITY.md](SECURITY.md#resource-limits).
+
 ### Concurrency and ownership
 
 - `Connect` / `Accept` take ownership of `conn` **immediately** (including on error).
@@ -148,7 +153,8 @@ cotpConn, err := cotp.Accept(ctx, raw, cotp.ServerConfig{
 - A context bounds only its own direction: `ReadTSDU` uses `SetReadDeadline`, `WriteTSDU` uses `SetWriteDeadline`, and only the `Connect`/`Accept` handshake uses `SetDeadline`. A write timing out never cuts a concurrent read, and vice versa. Do not set deadlines on the underlying `net.Conn` yourself.
 - If a context ends an operation **before any octet** of the TSDU crossed the stream (including while waiting for its turn), the call returns `ctx.Err()` and the connection stays open. Once octets have moved, the connection is aborted (`ErrClosed` + context error), never left half-written.
 - `Close` unblocks outstanding `Connect`/`Accept` waiters on the peer side and local `ReadTSDU`/`WriteTSDU`.
-- Limits: `MaxTPDULength` ∈ `[128, 65531]` (0 → default 65531); `MaxTSDULength` caps reassembled TSDUs; connect data ≤ 32 octets.
+- Limits: `MaxTPDULength` ∈ `[128, 65531]` (0 → default 65531); `MaxTSDULength` caps reassembled TSDUs (0 → default 4 MiB) and, with it, the memory one `ReadTSDU` call holds; connect data ≤ 32 octets. The full table is in [SECURITY.md](SECURITY.md#resource-limits).
+- A `Conn` comes from `Connect` or `Accept`; on a zero `Conn`, `ReadTSDU` and `WriteTSDU` return `ErrClosed`.
 - Compliance: TP0 / RFC 1006 Class 0 profile — not full X.214/X.224/RFC 2126. See [docs/COMPLIANCE.md](docs/COMPLIANCE.md).
 
 Runnable examples: `go test -run Example`.
@@ -194,7 +200,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the ownership matrix.
 - [RELEASE.md](RELEASE.md) — Release notes.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — How to contribute, run tests, and submit changes.
 - [LICENSE](LICENSE) — MIT.
-- [SECURITY.md](SECURITY.md) — How to report security issues.
+- [SECURITY.md](SECURITY.md) — How to report security issues; the resource limits and where each is enforced.
 - [spec/README.md](spec/README.md) — X.214 / X.224 / RFC 1006 / RFC 2126 references.
 
 Runnable examples (decode and encode with tpkt) live in `example_test.go`; run them with `go test -run Example`.

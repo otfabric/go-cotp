@@ -30,6 +30,15 @@ type ServerConfig struct {
 	MaxTSDULength int
 	// OnConnect decides accept/reject. Nil = defaultAutoAccept.
 	// Indication fields are defensive copies (safe to retain).
+	//
+	// OnConnect runs on the goroutine that called Accept, after the CR was
+	// read and before the CC is written, with the context given to Accept
+	// and while that context's deadline is armed on the stream. No Conn
+	// exists yet, so it has nothing to call back into. A callback that
+	// blocks stalls that handshake only; no other connection waits for it.
+	// It is not interrupted when the context ends: the CC write that follows
+	// then fails. A panic in OnConnect is not recovered: it reaches the
+	// caller of Accept, after Accept has closed the stream.
 	OnConnect   func(context.Context, ConnectIndication) (AcceptDecision, error)
 	SizeProfile SizeProfile
 	// EchoSelectors returns the CR's transport selectors in the CC

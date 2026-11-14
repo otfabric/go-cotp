@@ -1,6 +1,6 @@
 # go-cotp Standards Compliance
 
-**Status date:** 2026-10-28  
+**Status date:** 2026-11-14  
 **Module:** `github.com/otfabric/go-cotp`  
 **Framing dependency:** `github.com/otfabric/go-tpkt` (version pinned in `go.mod`)  
 
@@ -77,9 +77,9 @@ PDF page numbers below refer to the ITU-T published page footers where practical
 | B-09 | Parameter order arbitrary | X.224 | 13.2.3 (p.57) | ITU normative | decode any order; encode CR/CC canonical C1→C2→C0 | encode tests | partial | Canonical order is **local deterministic policy**, not X.224-mandated |
 | B-10 | Transport references DST/SRC | X.224 | 13.3–13.6 | ITU normative | fields on CR/CC/DR/DC/…; engine allocate/validate | unit + connect/accept tests | **pass** (TP0) | Non-zero local refs; peer SRC-REF=0 rejected; CC DST-REF checked |
 | B-21 | Non-zero connection references + uniqueness | X.224 | 6.5 (shall not be zero / not in use or frozen) | ITU normative | `referenceAllocator` wired into `Connect`/`Accept` | `reference_allocator_test.go`, `connect_test.go`, `accept_test.go` | **pass** (TP0) | Allocator collision-safe; release on every failure/terminal path |
-| B-11 | Class and option negotiation | X.224 | 6.5, 13.3.3 | ITU normative | `ClassOption` octet stored | — | not implemented | No negotiation; value not validated (`ErrInvalidClassOption` unused) |
+| B-11 | Class and option negotiation | X.224 | 6.5, 13.3.3 | ITU normative | Codec: `ClassOption` octet stored. Service: `Accept` (`accept.go`), `validateClass0CCFixed` (`handshake_validate.go`) | `accept_test.go`, `connect_test.go`, `handshake_validation_test.go`, `adversarial_test.go` | partial | No negotiation of another class or of options. The service validates the octet: a CR that prefers another class is refused with a DR, a class 0 CR with non-zero option bits is answered with an ER, and a CC must carry class 0 with no options. The codec stores the octet without validating it (`ErrInvalidClassOption` unused) |
 | B-12 | Alternative protocol classes | X.224 | 6.5 / CR variable part | ITU normative | unknown param only | — | not implemented | No typed param |
-| B-13 | TPDU size parameter (0xC0) | X.224 | 13.3.4 b) | ITU normative | `TPDUSize *uint8`; engine nego | CR/CC + `size_*_test.go`, `integration_test.go` | **pass** (TP0) | Class 0 codes 0x07–0x0B; 0x0C/0x0D rejected; negotiated size enforced on open DT |
+| B-13 | TPDU size parameter (0xC0) | X.224 | 13.3.4 b) | ITU normative | `TPDUSize *uint8`; engine nego (`size_nego.go`) | CR/CC + `size_*_test.go`, `integration_test.go` | partial (TP0) | **Deviation for interoperability.** X.224 allows the codes 0x07–0x0B (128 to 2048 octets) in class 0. Since v1.0.1 go-cotp accepts and sends 0x07–0x10 (up to 65536 octets) in class 0, because RFC 1006 stacks in the field negotiate the larger codes ([RELEASE.md](../RELEASE.md) v1.0.1); any other code fails the handshake. Negotiated size enforced on open DT |
 | B-14 | Preferred maximum TPDU size (generic wire) | X.224 | 13.3.4 c), 6.5 | ITU normative | `PreferredMaxTPDUSize *uint32`; `PreferredMaxTPDULength` / `PreferredMaxTPDUUnits` | `preferred_max_codec_test.go` | **pass** | Typed units; exact uint64 helpers; permissive decode / canonical encode; no ITOT 511 clamp; last-wins duplicates |
 | B-22 | Preferred maximum ITOT service ceiling | RFC 1006/2126 + design | ITOT max TPDU 65531 | Transport profile / Implementation choice | `size_nego.go` + `Connect`/`Accept` | `size_*_test.go`, `integration_test.go`, `adversarial_test.go` | **pass** (TP0) | units ≤ 511; path-normalized selection; omitted CC under PreferredMaximum rejected |
 | B-15 | Calling/Called TSAP selectors | X.224 | 13.3.4 a) | ITU normative | `0xC1`/`0xC2` typed | params / p0 tests | partial | Raw bytes; encode rejects len>255; semantic TSAP type still absent |
@@ -98,13 +98,13 @@ PDF page numbers below refer to the ITU-T published page footers where practical
 | C-CR | CR | Fixed part CDT/DST/SRC/ClassOption + var params | X.224 | 13.3 (p.57+) | pass / partial | Typed C1/C2/C0; UserData; CR≤128; many optional CR params still untyped |
 | C-CC | CC | Same family as CR | X.224 | 13.4 | pass / partial | Same as CR minus 128-octet cap |
 | C-DR | DR | Refs, reason, params, user data | X.224 | 13.5 | partial | User data exposed; ≤64-octet limit not enforced |
-| C-DC | DC | Refs + params | X.224 | 13.6 | partial | Trailing octets ignored |
-| C-DT | DT | Minimal (class 0/1) and normal; extended optional | X.224 | 13.7 | partial | Minimal LI=2 + normal LI≥4; **extended rejected** (`ErrUnsupportedDTVariant`); ROA bit not modeled on encode (always 0). Class 0 user data per DT = negotiated TPDU size − 3 (§13.7.5); see E-09 vs RFC 1006 65524 |
-| C-ED | ED | Normal/extended; user data 1–16 | X.224 | 13.8 | partial | Normal only; 1–16 enforced; RFC 1006/2126 use DT-like ED for TP0 — **profile conflict** (see E/F) |
-| C-AK | AK | Normal/extended + CDT | X.224 | 13.9 | partial | Normal only |
-| C-EA | EA | Normal/extended | X.224 | 13.10 | partial | Normal only |
-| C-RJ | RJ | Fixed; no variable part | X.224 | 13.11 | pass | LI must be exactly 4 (LI&lt;4 → ErrInvalidLI; LI&gt;4 → ErrMalformedParameter) |
-| C-ER | ER | DST-REF, reject cause, params | X.224 | 13.12 | partial | Cause values not enum-checked |
+| C-DC | DC | Refs + params | X.224 | 13.6 | partial | Octets after the header are ignored |
+| C-DT | DT | Minimal (class 0/1) and normal; extended optional | X.224 | 13.7 | partial | Decode: minimal LI=2 and normal with an even LI ≥ 4. An odd LI is the extended format (§13.7.4 NOTE: even LI normal, odd LI extended) and is **rejected** (`ErrUnsupportedDTVariant`), as are LI 0, 1 and 3. Encode: ROA bit not modeled (always 0); TPDU-NR written as its low 7 bits; parameters are written also in the minimal format (§13.7.1 a) gives it no variable part) and a variable part that makes LI odd is not refused, so the encoder can build a DT the decoder rejects. Class 0 user data per DT = negotiated TPDU size − 3 (§13.7.5); see E-09 vs RFC 1006 65524 |
+| C-ED | ED | Normal/extended; user data 1–16 | X.224 | 13.8 | partial | Normal only: the extended format is not recognised and no LI rule is applied; 1–16 enforced; RFC 1006/2126 use DT-like ED for TP0 — **profile conflict** (see E/F) |
+| C-AK | AK | Normal/extended + CDT | X.224 | 13.9 | partial | Normal only: the extended format is not recognised. Octets after the header are ignored. CDT written as its low 4 bits on encode |
+| C-EA | EA | Normal/extended | X.224 | 13.10 | partial | Normal only: the extended format is not recognised. Octets after the header are ignored |
+| C-RJ | RJ | Fixed; no variable part | X.224 | 13.11 | partial | LI must be exactly 4 (LI&lt;4 → ErrInvalidLI; LI&gt;4 → ErrMalformedParameter). Octets after the header are ignored. CDT written as its low 4 bits on encode |
+| C-ER | ER | DST-REF, reject cause, params | X.224 | 13.12 | partial | Cause values not enum-checked. Octets after the header are ignored |
 
 ---
 
@@ -112,13 +112,13 @@ PDF page numbers below refer to the ITU-T published page footers where practical
 
 | Class | Codec coverage | State machine | Segmentation | Flow control | Multiplexing | Expedited | Timers | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 0 | CR/CC/DT(min)/DR/ER (+DC) wire | none | none | n/a | n/a | RFC1006 ED variant unclear vs X.224 | none | **codec only** |
+| 0 | CR/CC/DT(min)/DR/ER (+DC) wire | TP0 service: `Connect`/`Accept` handshake, open state, close and abort (`conn.go`, `open_dt.go`) | DT segmentation and reassembly (`WriteTSDU`/`ReadTSDU`) | n/a | n/a | RFC1006 ED variant unclear vs X.224 | none of its own: the caller's context bounds each operation | **service (TP0)** and codec |
 | 1 | same + ED/EA wire possible | none | none | none | none | none | none | **codec only** |
 | 2 | DT normal, AK, RJ, ED, EA wire | none | none | none | none | none | none | **codec only** |
 | 3 | wire fields overlap class 2/4 | none | none | none | none | none | none | **codec only** |
 | 4 | checksum absent | none | none | none | none | none | none | **codec only** |
 
-Annex A state tables (X.224 Annex A): **not implemented**.
+Annex A state tables (X.224 Annex A): **not implemented** as tables. The class 0 service follows the contract in [TP0_API_DESIGN.md](TP0_API_DESIGN.md); classes 1 to 4 have no state machine.
 
 ---
 
@@ -133,7 +133,7 @@ Annex A state tables (X.224 Annex A): **not implemented**.
 | E-05 | Port 102 | RFC 1006 | Status / § | RFC normative | not applicable | Profile concern, not codec |
 | E-06 | Default max TPDU 65531 | RFC 1006 | TPKT length | RFC normative | **pass** (TP0) | `DefaultMaxTPDULength` / omitted-size path; see [TP0_API_DESIGN.md](TP0_API_DESIGN.md) |
 | E-07 | Expedited: modified ED ≈ DT | RFC 1006 | expedited notes | RFC normative | **unclear** / partial | Library ED follows X.224 13.8 shape (DST-REF + NR), not the RFC 1006 “ED looks like DT” experimental form |
-| E-08 | TCP close → disconnect | RFC 1006 | mapping | RFC normative | **pass** (TP0) | Peer TCP close → `ErrDisconnected`+EOF; reset / broken pipe → `ErrDisconnected`+cause; local `Close` unblocks waiters; first terminal cause wins |
+| E-08 | TCP close → disconnect | RFC 1006 | mapping | RFC normative | **pass** (TP0) | Peer TCP close → `ErrDisconnected`+EOF; reset / broken pipe / connection timeout reported by the operating system → `ErrDisconnected`+cause; local `Close` unblocks waiters; first terminal cause wins |
 | E-09 | Max TSDU 65524 for TPDU 65531 | RFC 1006 | body | RFC normative | **discrepancy** | Conflicts with X.224:1995 §13.7 Class 0 DT (TPDU − 3 → 65528 user octets **per DT segment**). No verified RFC 1006 erratum. **go-cotp TP0 uses X.224 for segmentation**; 65524 retained here only as a documented discrepancy. 65528 is max per-DT payload, not a max TSDU |
 | E-10 | Omitted CC size → local-capped negotiated max | RFC 1006 / 2126 / design | — | Implementation choice / installed-base compatibility | partial | Wired through client `Connect` via `interpretCCSize`; see [TP0_API_DESIGN.md](TP0_API_DESIGN.md) §5.6 |
 
@@ -163,7 +163,8 @@ Annex A state tables (X.224 Annex A): **not implemented**.
 | G-01 | Validate lengths before slicing | Security invariant | pass | Variable-part overrun and LI≥fixed-part checked |
 | G-02 | LI=255 reserved | ITU normative | pass | |
 | G-03 | Parameter length before value | Security invariant | pass | |
-| G-04 | Bounded allocations | Security invariant | pass | No grow loops unbounded beyond input |
+| G-04 | Bounded allocations | Security invariant | pass | The codec allocates nothing sized by a wire field. `ReadTSDU` holds a pending reassembly in one buffer capped at `MaxTSDULength`, with an allocation-budget test (`TestReadTSDU_PendingReassemblyBudget`). Limits table: [SECURITY.md](../SECURITY.md#resource-limits) |
+| G-12 | Decoded slices carry no spare capacity | API contract | pass | Selectors, parameter values and user data alias the input and are clipped to their own octets (`TestDecode_AppendToDecodedSliceLeavesInputAlone`) |
 | G-05 | Nil receiver MarshalBinary | API contract | pass | `ErrNilReceiver` |
 | G-06 | No partial Decoded on error | API contract | pass | FuzzDecode asserts zero value |
 | G-07 | Aliasing documented | API contract | pass | `doc.go`, `API.md` |

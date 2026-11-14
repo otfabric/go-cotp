@@ -31,7 +31,7 @@ The codec has no state and can be used without the service (`Decode`, `MarshalBi
 1. `Connect` and `Accept` own the `net.Conn` from the moment they are called: every failing exit closes it.
 2. The handshake runs on the caller's goroutine. It validates the configuration, wraps the stream in `meteredConn`, builds the TPKT reader and writer, allocates a non-zero local reference from the process-wide `defaultRefs` allocator, and exchanges CR and CC (or DR or ER on refusal). It is the only phase that uses `SetDeadline`.
 3. On success the parameters are frozen in `NegotiatedParameters` and the `*Conn` is open.
-4. `ReadTSDU` reassembles DT segments into one TSDU; `WriteTSDU` splits one TSDU into DT segments. Anything else in the open state ends the connection (`open_dt.go`).
+4. `ReadTSDU` reassembles DT segments into one TSDU, in one buffer whose capacity never exceeds `MaxTSDULength`; `WriteTSDU` splits one TSDU into DT segments. Anything else in the open state ends the connection (`open_dt.go`).
 5. `Close`, or an abort, runs once (`Conn.finish`): it records the first terminal cause, closes the stream and releases the reference.
 
 ## Goroutines and ownership

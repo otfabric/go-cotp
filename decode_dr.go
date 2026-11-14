@@ -39,6 +39,6 @@ func DecodeDR(b []byte) (*DR, error) {
 		}
 		dr.Parameters = params
 	}
-	dr.UserData = b[headerLen:]
+	dr.UserData = b[headerLen:len(b):len(b)]
 	return dr, nil
 }

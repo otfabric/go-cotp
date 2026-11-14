@@ -78,30 +78,64 @@ func BenchmarkPreferredSizeNegotiation(b *testing.B) {
 	}
 }
 
+// The TSDU benchmarks below run two Conns of this package against each other
+// over net.Pipe, a synchronous in-memory stream: every Write waits for the
+// matching Read. They measure segmentation, TPKT framing, reassembly and the
+// hand-over between the writing and the reading goroutine. No socket and no
+// kernel is involved, so they are not throughput figures for TCP, and no
+// figure from them is published (LIMITATIONS.md "Timing").
+//
+// The peer is one goroutine started before the timer: the timed loop holds
+// the operations under measurement and nothing of the harness.
+
+// drainTSDUs reads n TSDUs of size octets from c on one goroutine and reports
+// the first failure, or nil once all n have arrived. On a failure it closes
+// c, so a writer blocked on the pipe returns.
+func drainTSDUs(c *Conn, n, size int) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		for range n {
+			got, err := c.ReadTSDU(context.Background())
+			if err == nil && len(got) != size {
+				err = errBenchLen
+			}
+			if err != nil {
+				_ = c.Close()
+				done <- err
+				return
+			}
+		}
+		done <- nil
+	}()
+	return done
+}
+
+// BenchmarkTSDUSingleSegment: one WriteTSDU of a 24-octet TSDU (a single DT)
+// and the ReadTSDU that receives it, per iteration.
 func BenchmarkTSDUSingleSegment(b *testing.B) {
 	cli, srv := openPipePairBench(b, 1024, DefaultMaxTSDULength)
 	payload := []byte("benchmark-single-segment")
+	received := drainTSDUs(srv, b.N, len(payload))
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		errCh := make(chan error, 1)
-		go func() {
-			_, err := srv.ReadTSDU(context.Background())
-			errCh <- err
-		}()
 		if err := cli.WriteTSDU(context.Background(), payload); err != nil {
 			b.Fatal(err)
 		}
-		if err := <-errCh; err != nil {
-			b.Fatal(err)
-		}
+	}
+	if err := <-received; err != nil {
+		b.Fatal(err)
 	}
 }
 
+// BenchmarkTSDUSegmented64KiB: one 64 KiB TSDU written as 525 DT segments of
+// 125 octets (TPDU size 128) and reassembled, per iteration.
 func BenchmarkTSDUSegmented64KiB(b *testing.B) {
 	benchmarkSegmentedTSDU(b, 64*1024)
 }
 
+// BenchmarkTSDUSegmented1MiB: one 1 MiB TSDU written as 8389 DT segments of
+// 125 octets (TPDU size 128) and reassembled, per iteration.
 func BenchmarkTSDUSegmented1MiB(b *testing.B) {
 	benchmarkSegmentedTSDU(b, 1<<20)
 }
@@ -110,74 +144,65 @@ func benchmarkSegmentedTSDU(b *testing.B, size int) {
 	b.Helper()
 	cli, srv := openPipePairBench(b, 128, size+1024)
 	payload := bytes.Repeat([]byte{0x5A}, size)
+	received := drainTSDUs(srv, b.N, size)
 	b.SetBytes(int64(size))
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		errCh := make(chan error, 1)
-		go func() {
-			got, err := srv.ReadTSDU(context.Background())
-			if err != nil {
-				errCh <- err
-				return
-			}
-			if len(got) != size {
-				errCh <- errBenchLen
-				return
-			}
-			errCh <- nil
-		}()
 		if err := cli.WriteTSDU(context.Background(), payload); err != nil {
 			b.Fatal(err)
 		}
-		if err := <-errCh; err != nil {
-			b.Fatal(err)
-		}
+	}
+	if err := <-received; err != nil {
+		b.Fatal(err)
 	}
 }
 
+// BenchmarkTSDUConcurrentRequestResponse: one request of 4 octets and its
+// response of 4 octets per iteration, client and server each on its own
+// goroutine. The name is kept for comparison with earlier runs; the exchange
+// is sequential, one request at a time.
 func BenchmarkTSDUConcurrentRequestResponse(b *testing.B) {
 	cli, srv := openPipePairBench(b, 1024, DefaultMaxTSDULength)
 	req := []byte("ping")
 	resp := []byte("pong")
+
+	// The server answers b.N requests on one goroutine.
+	served := make(chan error, 1)
+	go func() {
+		for range b.N {
+			got, err := srv.ReadTSDU(context.Background())
+			if err == nil && !bytes.Equal(got, req) {
+				err = errBenchLen
+			}
+			if err == nil {
+				err = srv.WriteTSDU(context.Background(), resp)
+			}
+			if err != nil {
+				_ = srv.Close()
+				served <- err
+				return
+			}
+		}
+		served <- nil
+	}()
+
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		errCh := make(chan error, 1)
-		go func() {
-			got, err := srv.ReadTSDU(context.Background())
-			if err != nil {
-				errCh <- err
-				return
-			}
-			if !bytes.Equal(got, req) {
-				errCh <- errBenchLen
-				return
-			}
-			errCh <- srv.WriteTSDU(context.Background(), resp)
-		}()
-		clientRead := make(chan error, 1)
-		go func() {
-			got, err := cli.ReadTSDU(context.Background())
-			if err != nil {
-				clientRead <- err
-				return
-			}
-			if !bytes.Equal(got, resp) {
-				clientRead <- errBenchLen
-				return
-			}
-			clientRead <- nil
-		}()
 		if err := cli.WriteTSDU(context.Background(), req); err != nil {
 			b.Fatal(err)
 		}
-		if err := <-errCh; err != nil {
+		got, err := cli.ReadTSDU(context.Background())
+		if err != nil {
 			b.Fatal(err)
 		}
-		if err := <-clientRead; err != nil {
-			b.Fatal(err)
+		if !bytes.Equal(got, resp) {
+			b.Fatal(errBenchLen)
 		}
+	}
+	if err := <-served; err != nil {
+		b.Fatal(err)
 	}
 }
 

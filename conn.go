@@ -34,6 +34,10 @@ const (
 )
 
 // Conn is an established Class 0 (TP0) COTP connection over a stream.
+//
+// A Conn comes from Connect or Accept. The zero value is not a connection:
+// its ReadTSDU and WriteTSDU return ErrClosed at once, and its Close returns
+// ErrClosed.
 type Conn struct {
 	raw    net.Conn
 	reader *tpkt.Reader
@@ -133,7 +137,17 @@ func (c *Conn) RemoteAddr() net.Addr {
 }
 
 // Close performs the TP0 T-DISCONNECT operation by closing the underlying stream.
-// It is idempotent on a non-nil Conn. Nil-receiver Close is not promised.
+//
+// Close is safe to call more than once and from multiple goroutines, and
+// concurrently with ReadTSDU and WriteTSDU: a blocked operation returns
+// ErrClosed, and so does every later one. The stream is closed and the local
+// reference released exactly once, before the first Close returns.
+//
+// Close does not return nil. It returns ErrClosed when it ended the
+// connection, and on every later call; when the connection had already ended
+// for another reason (the peer went away, a protocol error, a context that
+// ended an operation after octets had moved), it returns that first cause.
+// Nil-receiver Close is not promised.
 func (c *Conn) Close() error {
 	if c == nil {
 		return fmt.Errorf("%w", ErrNilReceiver)

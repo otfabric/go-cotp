@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-tpkt"
@@ -306,47 +307,64 @@ func TestConnect_MalformedTPKT(t *testing.T) {
 	_ = err
 }
 
+// Contract matrix L5: the handshake's context ends while Connect waits for the CC.
 func TestConnect_ContextCancelAfterIOStartsClosesStream(t *testing.T) {
-	c1, c2 := net.Pipe()
-	defer func() { _ = c2.Close() }()
-	ctx, cancel := context.WithCancel(context.Background())
+	synctest.Test(t, func(t *testing.T) {
+		held := defaultRefs.Len()
+		c1, c2 := net.Pipe()
+		defer func() { _ = c2.Close() }()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 
-	peerDone := make(chan struct{})
-	go func() {
-		defer close(peerDone)
-		// Read the CR (I/O started), then wait; client cancels while awaiting CC.
-		_ = readPeerCR(t, c2)
-		buf := make([]byte, 1)
-		_, _ = c2.Read(buf) // unblocked when client closes
-	}()
+		peerDone := make(chan struct{})
+		go func() {
+			defer close(peerDone)
+			// Read the CR (I/O started), then wait; client cancels while awaiting CC.
+			_ = readPeerCR(t, c2)
+			buf := make([]byte, 1)
+			_, _ = c2.Read(buf) // unblocked when client closes
+		}()
 
-	errCh := make(chan error, 1)
-	go func() {
-		_, err := Connect(ctx, c1, ClientConfig{MaxTPDULength: 1024})
-		errCh <- err
-	}()
-
-	// Ensure CR has been written so I/O has started.
-	time.Sleep(50 * time.Millisecond)
-	cancel()
-
-	select {
-	case err := <-errCh:
-		if !errors.Is(err, ErrClosed) {
-			t.Fatalf("err = %v, want ErrClosed", err)
+		type result struct {
+			conn *Conn
+			err  error
 		}
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("err = %v, want context.Canceled", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("Connect did not return after cancel")
-	}
+		resCh := make(chan result, 1)
+		go func() {
+			conn, err := Connect(ctx, c1, ClientConfig{MaxTPDULength: 1024})
+			resCh <- result{conn, err}
+		}()
 
-	select {
-	case <-peerDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("peer was not unblocked; stream not closed after cancel")
-	}
+		synctest.Wait() // the CR is written and read; Connect is blocked waiting for the CC
+		if got := defaultRefs.Len(); got != held+1 {
+			t.Fatalf("%d references held during the handshake, want %d", got, held+1)
+		}
+		cancel()
+
+		select {
+		case res := <-resCh:
+			if !errors.Is(res.err, ErrClosed) {
+				t.Fatalf("err = %v, want ErrClosed", res.err)
+			}
+			if !errors.Is(res.err, context.Canceled) {
+				t.Fatalf("err = %v, want context.Canceled", res.err)
+			}
+			if res.conn != nil {
+				t.Fatal("a cancelled Connect returned a Conn")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("Connect did not return after cancel")
+		}
+		if got := defaultRefs.Len(); got != held {
+			t.Fatalf("%d references held after the cancelled handshake, %d before", got, held)
+		}
+
+		select {
+		case <-peerDone:
+		case <-time.After(2 * time.Second):
+			t.Fatal("peer was not unblocked; stream not closed after cancel")
+		}
+	})
 }
 
 func TestConnect_NilConn(t *testing.T) {

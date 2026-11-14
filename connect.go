@@ -179,6 +179,11 @@ func connectIOError(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
 	}
+	// A connection timeout reported by the kernel is the stream going away,
+	// whatever state ctx is in, as in open-state classifyIOPhase.
+	if connTimedOut(err) {
+		return &DisconnectError{Cause: err}
+	}
 	if ctx.Err() != nil {
 		return fmt.Errorf("%w: %w", ErrClosed, ctx.Err())
 	}

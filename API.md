@@ -30,10 +30,12 @@ func (c *Conn) RemoteAddr() net.Addr
 - TPKT framing is internal; `*Conn` callers must not wrap the same stream with go-tpkt.
 - Full duplex: one `ReadTSDU` and one `WriteTSDU` run concurrently. Concurrent `WriteTSDU` calls are serialized for a whole TSDU (segments never interleave); concurrent `ReadTSDU` calls are serialized likewise. A caller waiting its turn returns `ctx.Err()` if its context ends first.
 - Per-direction deadlines: `ReadTSDU` applies its context with `SetReadDeadline` only, `WriteTSDU` with `SetWriteDeadline` only, and each restores its direction to no deadline when it returns. Only the `Connect`/`Accept` handshake uses `SetDeadline`. Callers must not set deadlines on the underlying `net.Conn`.
-- `Close` returns `ErrClosed` when it wins the terminal cause; otherwise it returns the first terminal cause. It unblocks waiters by closing the underlying stream.
+- A `Conn` comes from `Connect` or `Accept`. The zero value is not a connection: its `ReadTSDU` and `WriteTSDU` return `ErrClosed` at once.
+- `Close` is safe to call more than once and from multiple goroutines, also while `ReadTSDU` and `WriteTSDU` are blocked. It never returns nil: it returns `ErrClosed` when it wins the terminal cause, and otherwise the first terminal cause. It unblocks waiters by closing the underlying stream, once, and releases the local reference, once.
 - A context that ends an operation before any octet of the TSDU crossed the stream returns `ctx.Err()` (not wrapped in `ErrClosed`) and the connection stays open. Once octets have moved, it aborts the whole connection (`ErrClosed` + context error).
-- A reset, broken pipe, or EOF inside a packet aborts with `ErrDisconnected` (`*DisconnectError` carries the cause), joined with `ErrIncompleteTSDU` when it interrupts a TSDU.
-- Empty TSDUs are rejected (`ErrEmptyTSDU`). Reassembly is bounded by `MaxTSDULength`.
+- A reset, broken pipe, EOF inside a packet, or a connection timeout reported by the operating system (`ETIMEDOUT`) aborts with `ErrDisconnected` (`*DisconnectError` carries the cause), joined with `ErrIncompleteTSDU` when it interrupts a TSDU. Only a deadline that go-cotp armed for the caller's context is reported as that context ending.
+- Empty TSDUs are rejected (`ErrEmptyTSDU`). Reassembly is bounded by `MaxTSDULength` (0 → 4 MiB): `ReadTSDU` keeps the segments received so far in one buffer whose capacity never exceeds it, and one call holds less than twice `MaxTSDULength`, plus one TPKT packet, whatever the size and number of the segments. A partly received TSDU is held until the call returns. The slice `ReadTSDU` returns is the caller's and has no capacity beyond its length.
+- `Connect` and `Accept` have no handshake timeout of their own; their context sets it. `ServerConfig.OnConnect` runs on the goroutine that called `Accept`, between the CR and the CC, and stalls only that handshake when it blocks. Limits: [SECURITY.md](SECURITY.md#resource-limits).
 
 ### Config highlights
 
@@ -101,6 +103,8 @@ Like `Decode` but on success sets `Decoded.Raw` to the exact input slice `b`. `R
 | `DecodeEA(b []byte) (*EA, error)` | `*EA` | Expedited Acknowledge |
 | `DecodeRJ(b []byte) (*RJ, error)` | `*RJ` | Reject |
 
+DC, ER, AK, EA and RJ carry no user data: octets after their header are ignored by the decoders and not kept. Decoded selectors, parameter values and user data alias `b` and have no capacity beyond their own octets.
+
 ---
 
 ## Encode
@@ -121,6 +125,11 @@ Each TPDU type has a `MarshalBinary` method implementing `encoding.BinaryMarshal
 | `(*RJ).MarshalBinary() ([]byte, error)` | Encode Reject. |
 
 Calling `MarshalBinary` on a nil receiver returns an error wrapping `ErrNilReceiver`. Use `errors.Is(err, cotp.ErrNilReceiver)` to detect.
+
+The encoders check the lengths they write (a parameter value above 255 octets, a header above 254, a CR above 128 octets, ED user data outside 1 to 16) and otherwise write what they are given:
+
+- CDT (CR, CC, AK, RJ) is written as its low 4 bits and TPDU-NR (DT, ED) as its low 7 bits; a larger value is not an error.
+- `(*DT).MarshalBinary` writes `Parameters` also when `DestinationRef` is nil, although X.224 §13.7.1 a) gives the class 0 and 1 format no variable part, and it does not refuse a variable part that makes LI odd. `DecodeDT` rejects an odd LI (`ErrUnsupportedDTVariant`) and reads LI 4 or more as the normal format, so such a DT does not decode to the value it was built from.
 
 ---
 
@@ -183,7 +192,7 @@ type Parameter struct {
 }
 ```
 
-Single variable-part parameter. `Value` may alias decode input.
+Single variable-part parameter. `Value` may alias decode input; like every decoded slice it has no capacity beyond its own octets, so an `append` to it allocates and never writes into the input.
 
 ---
 
@@ -246,6 +255,8 @@ type DT struct {
 ```
 
 Nil `UserData` or zero-length = valid empty payload. Nil `DestinationRef`/`TPDUNR` = absent (e.g. minimal format). `UserData` may alias decode input.
+
+`DecodeDT` selects the format from LI: 2 is the class 0 and 1 format, an even value of 4 or more the normal class 2 to 4 format. An odd LI is the extended format (X.224 §13.7.4 NOTE: an even LI is the normal format, an odd LI the extended one), which is not decoded: it is rejected with `ErrUnsupportedDTVariant`, as are LI 0, 1 and 3.
 
 ---
 
@@ -397,7 +408,7 @@ Sentinel errors for classification with `errors.Is`. Decode/encode functions wra
 | `ErrMalformedParameter` | Parameter block malformed (e.g. length overrun). |
 | `ErrUnexpectedParameterLength` | Parameter/selector length outside allowed range. |
 | `ErrUnsupportedTPDU` | Structurally valid but unsupported type (reserved/unknown). |
-| `ErrUnsupportedDTVariant` | Valid DT shape (e.g. extended format) not supported. |
+| `ErrUnsupportedDTVariant` | DT whose LI is neither 2 nor an even value of 4 or more: the extended format (odd LI, X.224 §13.7.4 NOTE) and LI 0, 1, 3. |
 | `ErrInvalidClassOption` | Invalid class/option field (currently unused). |
 | `ErrDuplicateKnownParameter` | Retained for compatibility; decode no longer returns it (last-wins). |
 | `ErrInvalidEDUserDataLength` | ED user data not 1–16 octets. |

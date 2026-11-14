@@ -25,7 +25,8 @@ var (
 	ErrUnexpectedParameterLength = errors.New("cotp: unexpected parameter length")
 	// ErrUnsupportedTPDU indicates the TPDU type is structurally valid but not supported by this decoder (reserved or unknown type codes).
 	ErrUnsupportedTPDU = errors.New("cotp: unsupported TPDU type")
-	// ErrUnsupportedDTVariant indicates a valid X.224 DT shape (e.g. extended format) that this decoder does not support.
+	// ErrUnsupportedDTVariant indicates a DT whose LI is neither 2 nor an even value of 4 or more: the extended
+	// format, which has an odd LI (X.224 13.7.4 NOTE), and LI 0, 1 and 3. This decoder does not support them.
 	ErrUnsupportedDTVariant = errors.New("cotp: unsupported DT variant")
 	// ErrInvalidClassOption indicates an invalid class/option field.
 	ErrInvalidClassOption = errors.New("cotp: invalid class option")
@@ -46,9 +47,11 @@ var (
 	ErrEmptyTSDU = errors.New("cotp: empty TSDU")
 	// ErrTSDUTooLarge indicates a TSDU exceeds the configured MaxTSDULength.
 	ErrTSDUTooLarge = errors.New("cotp: TSDU exceeds configured maximum")
-	// ErrClosed indicates the local connection was closed (or aborted after I/O).
+	// ErrClosed indicates the local connection was closed (or aborted after I/O), or a Conn that
+	// Connect or Accept did not build.
 	ErrClosed = errors.New("cotp: connection closed")
-	// ErrDisconnected indicates the peer disconnected (EOF/reset), not a local Close.
+	// ErrDisconnected indicates the peer disconnected (EOF, reset, or a connection timeout reported
+	// by the operating system), not a local Close.
 	ErrDisconnected = errors.New("cotp: peer disconnected")
 	// ErrConnectionRefused indicates the peer refused the connection (DR during handshake).
 	ErrConnectionRefused = errors.New("cotp: connection refused")

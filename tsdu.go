@@ -35,6 +35,10 @@ func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if c.writeMu == nil {
+		// Not built by Connect or Accept: there is no stream to write.
+		return fmt.Errorf("%w", ErrClosed)
+	}
 
 	if err := c.writeMu.lock(ctx); err != nil {
 		return err
@@ -84,7 +88,9 @@ func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error {
 }
 
 // ReadTSDU receives one complete TSDU by reassembling minimal Class 0 DT segments
-// until EOT=1. The returned slice is caller-owned and does not alias internal buffers.
+// until EOT=1. The returned slice is the caller's: it has no capacity beyond
+// its length, go-cotp keeps no reference to it, and a later call never
+// changes it.
 //
 // One reader at a time reassembles a TSDU; a concurrent caller waits its turn
 // and returns ctx.Err() if ctx ends first. ctx bounds only the read direction
@@ -92,12 +98,25 @@ func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error {
 // read before any octet of the TSDU arrived, ReadTSDU returns ctx.Err() and
 // the connection stays open; once octets have been consumed, the connection
 // is aborted.
+//
+// Memory: the segments received so far are held in one buffer, whatever
+// their size and number. Its capacity never exceeds MaxTSDULength; while it
+// grows, and when the result is handed over, the old and the new buffer exist
+// together, so a call holds less than twice MaxTSDULength, plus the TPKT
+// packet being read (at most 65535 octets). A partly received TSDU is held
+// until the call returns: until the final segment arrives, ctx ends, the
+// stream fails or the connection is closed. A read loop without a deadline
+// keeps it for as long as the peer leaves the TSDU unfinished.
 func (c *Conn) ReadTSDU(ctx context.Context) ([]byte, error) {
 	if c == nil {
 		return nil, fmt.Errorf("%w", ErrNilReceiver)
 	}
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if c.readMu == nil {
+		// Not built by Connect or Accept: there is no stream to read.
+		return nil, fmt.Errorf("%w", ErrClosed)
 	}
 
 	if err := c.readMu.lock(ctx); err != nil {
@@ -127,8 +146,9 @@ func (c *Conn) ReadTSDU(ctx context.Context) ([]byte, error) {
 	defer disarm()
 
 	start, tracked := c.readProgress()
-	segments := make([][]byte, 0, 4)
-	total := 0
+	// buf holds the user data of the segments accepted so far. Every accepted
+	// segment carries at least one octet, so len(buf) > 0 means mid-TSDU.
+	var buf []byte
 
 	for {
 		payload, err := c.reader.ReadPacket()
@@ -138,10 +158,10 @@ func (c *Conn) ReadTSDU(ctx context.Context) ([]byte, error) {
 					return nil, cerr
 				}
 			}
-			return nil, c.classifyIOPhase(ctx, err, len(segments) > 0)
+			return nil, c.classifyIOPhase(ctx, err, len(buf) > 0)
 		}
 
-		mid := len(segments) > 0
+		mid := len(buf) > 0
 		dt, err := decodeOpenDT(payload, c.negotiated.MaxTPDULength)
 		if err != nil {
 			return nil, c.abortOpen(mid, err)
@@ -151,38 +171,62 @@ func (c *Conn) ReadTSDU(ctx context.Context) ([]byte, error) {
 			// Empty DT segments are nonproductive and rejected in P1.
 			return nil, c.abortOpen(mid, fmt.Errorf("empty DT segment: %w", ErrHandshake))
 		}
-		if total+len(seg) > maxTSDU {
-			return nil, c.abortOpen(mid, fmt.Errorf("reassembly length %d > %d: %w", total+len(seg), maxTSDU, ErrTSDUTooLarge))
-		}
-		// Defensive segment-count bound: each accepted segment carries ≥1 byte.
-		if len(segments)+1 > maxTSDU {
-			return nil, c.abortOpen(mid, fmt.Errorf("segment count %d > %d: %w", len(segments)+1, maxTSDU, ErrTSDUTooLarge))
+		if len(seg) > maxTSDU-len(buf) {
+			return nil, c.abortOpen(mid, fmt.Errorf("reassembly length %d > %d: %w", len(buf)+len(seg), maxTSDU, ErrTSDUTooLarge))
 		}
 
-		segments = append(segments, copyBytes(seg))
-		total += len(seg)
+		buf = appendSegment(buf, seg, maxTSDU)
 		if dt.EOT {
 			break
 		}
 	}
+	return ownedTSDU(buf), nil
+}
 
-	out := make([]byte, total)
-	off := 0
-	for _, s := range segments {
-		copy(out[off:], s)
-		off += len(s)
+// appendSegment appends seg to the reassembly buffer buf. The buffer grows by
+// doubling, never beyond limit octets of capacity, so the memory of a
+// reassembly follows the octets received and not the number of segments.
+// The caller has checked len(buf)+len(seg) <= limit.
+func appendSegment(buf, seg []byte, limit int) []byte {
+	need := len(buf) + len(seg)
+	if need <= cap(buf) {
+		return append(buf, seg...)
 	}
-	return out, nil
+	newCap := cap(buf)
+	if newCap > limit-newCap {
+		newCap = limit
+	} else {
+		newCap *= 2
+	}
+	if newCap < need {
+		newCap = need
+	}
+	grown := make([]byte, len(buf), newCap)
+	copy(grown, buf)
+	return append(grown, seg...)
+}
+
+// ownedTSDU returns the reassembled TSDU for the caller: buf itself, clipped
+// to its length, or a copy of exactly its length when more than a quarter of
+// buf would stay allocated unused behind it.
+func ownedTSDU(buf []byte) []byte {
+	if cap(buf)-len(buf) > len(buf)/4 {
+		out := make([]byte, len(buf))
+		copy(out, buf)
+		return out
+	}
+	return buf[:len(buf):len(buf)]
 }
 
 // peerGone reports whether err means the stream itself is gone (reset, broken
-// pipe, closed underneath go-cotp, or EOF inside a packet), as opposed to a
-// framing or protocol error.
+// pipe, closed underneath go-cotp, EOF inside a packet, or the kernel giving
+// up on the connection), as opposed to a framing or protocol error.
 func peerGone(err error) bool {
 	return errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, syscall.ECONNRESET) ||
 		errors.Is(err, syscall.ECONNABORTED) ||
 		errors.Is(err, syscall.EPIPE) ||
+		connTimedOut(err) ||
 		errors.Is(err, net.ErrClosed) ||
 		errors.Is(err, io.ErrClosedPipe)
 }
@@ -228,11 +272,15 @@ func (c *Conn) classifyIOPhase(ctx context.Context, err error, midTSDU bool) err
 	if c.terminalKind() != terminalNone {
 		return c.terminalError()
 	}
-	if ctx.Err() != nil {
-		return c.abort(fmt.Errorf("%w: %w", ErrClosed, ctx.Err()))
-	}
-	if _, ok := ctx.Deadline(); ok && isTimeout(err) {
-		return c.abort(fmt.Errorf("%w: %w", ErrClosed, context.DeadlineExceeded))
+	// A connection timeout reported by the kernel is the stream going away,
+	// whatever state ctx is in: it is classified below, with peerGone.
+	if !connTimedOut(err) {
+		if ctx.Err() != nil {
+			return c.abort(fmt.Errorf("%w: %w", ErrClosed, ctx.Err()))
+		}
+		if _, ok := ctx.Deadline(); ok && isTimeout(err) {
+			return c.abort(fmt.Errorf("%w: %w", ErrClosed, context.DeadlineExceeded))
+		}
 	}
 	if errors.Is(err, io.EOF) {
 		if midTSDU {
