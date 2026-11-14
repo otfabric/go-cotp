@@ -47,3 +47,15 @@ The minimum is 90% of statements of the root package. It is set in `Makefile` (`
 ## Fuzz regressions
 
 `go test -fuzz` writes a failing input to `testdata/fuzz/<Target>/`. Fix the bug, commit that file, and it runs as a seed in every `go test` from then on. Do not delete a corpus file to make a test pass.
+
+## When CI runs
+
+| Event | Workflow | What runs |
+|---|---|---|
+| Pull request | `pr.yml` | `docs.yml` (docsync, otfabric-policy) always; `ci.yml` unless every changed file is documentation; then `OT Fabric Required Checks` |
+| Push to a branch | none | nothing; dispatch `ci.yml` to test a branch without a pull request |
+| Push to `main` | `docs.yml` | the light checks; the merged commit was tested as the pull request's merge commit |
+| Schedule | `nightly.yml` | the scheduled runs, on `main` |
+| Release | `release.yml` | the release workflow tests the release commit again |
+
+Documentation means an added or modified `*.md` file outside `.github/`, `testdata/` and `vendor/`, other than `AGENTS.md` and `CLAUDE.md`. A deleted or renamed document, or any other file, runs everything. `OT Fabric Required Checks` fails unless every job that applies succeeded; its summary lists them.
