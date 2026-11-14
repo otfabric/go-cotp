@@ -119,6 +119,20 @@ func newOpenConn(
 	return c
 }
 
+// openReader returns the TPKT reader for the open connection: it refuses a
+// packet longer than the negotiated TPDU size plus the TPKT header before it
+// allocates the payload. The handshake reader accepts up to 65535 octets.
+// go-tpkt reads straight from the stream, so replacing the reader at a packet
+// boundary loses no octet. The negotiated size is 128 to 65531 octets, so
+// go-tpkt accepts the limit; should it not, the handshake reader is kept.
+func openReader(stream net.Conn, maxTPDU int, handshake *tpkt.Reader) *tpkt.Reader {
+	r, err := tpkt.NewReader(stream, tpkt.ReaderConfig{MaxPacketLength: maxTPDU + tpkt.HeaderLength})
+	if err != nil {
+		return handshake
+	}
+	return r
+}
+
 // Negotiated returns a copy of the frozen handshake parameters.
 func (c *Conn) Negotiated() NegotiatedParameters {
 	if c == nil {

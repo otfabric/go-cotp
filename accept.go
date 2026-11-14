@@ -203,6 +203,7 @@ func Accept(ctx context.Context, conn net.Conn, cfg ServerConfig) (*Conn, error)
 		PeerConnectData: copyBytes(cr.UserData),
 	}
 
+	reader = openReader(stream, neg.MaxTPDULength, reader)
 	c := newOpenConn(stream, reader, writer, neg, maxTSDU, cfg.SizeProfile, localRef, refs)
 	refHeld = false
 	success = true
