@@ -10,7 +10,8 @@ import (
 // AK fixed part: 4 octets (code+CDT, DST-REF, YR-TU-NR). Header = LI (1) + this. X.224 13.9.
 const akFixedPartLength = 4
 
-// DecodeAK decodes an Acknowledge TPDU from b.
+// DecodeAK decodes an Acknowledge TPDU from b. An AK has no data field
+// (X.224 13.9.1): octets after the header are refused with ErrLengthMismatch.
 // Type check: octet2&0xF0==0x60; CDT = octet2&0x0F.
 func DecodeAK(b []byte) (*AK, error) {
 	if len(b) < 1+akFixedPartLength {
@@ -26,6 +27,9 @@ func DecodeAK(b []byte) (*AK, error) {
 	}
 	if b[1]&0xF0 != 0x60 {
 		return nil, fmt.Errorf("decode AK: not an AK TPDU (code 0x%02x): %w", b[1], ErrInvalidTPDUCode)
+	}
+	if err := noDataField(b, headerLen); err != nil {
+		return nil, fmt.Errorf("decode AK: %w", err)
 	}
 	ak := &AK{
 		CDT:            b[1] & 0x0F,

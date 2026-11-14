@@ -1,5 +1,39 @@
 # go-cotp Releases
 
+## v1.4.0
+
+**Date:** 2026-11-14
+**Previous release:** v1.3.1
+
+No exported identifier is added, removed or changed. The entries under "Breaking" change, in the cases they name, which input the encoders and five decoders accept and which error a write timeout over TLS returns. Nothing else changes for a caller.
+
+### Breaking
+
+- **A write timeout over TLS ends the connection.** Over a `*tls.Conn` passed to `Connect` or `Accept`, a `WriteTSDU` that its context ends (a deadline, or a cancellation) after it wrote to the stream aborts the connection: the error matches `ErrClosed` and the context error, also when no octet of the TSDU was accepted, every later call and `Close` return it, and the stream is closed. Before, such a write returned the bare context error and left the `Conn` open, and the next write failed with the stream's own error. crypto/tls fails every write after one that timed out, so that `Conn` could not write again: there is nothing to restore, and a caller that wants to go on opens a new connection. Unchanged: reads over TLS, a context that ends before the write starts (while it waits its turn), and every other stream, where a write that moved no octet still leaves the connection open. go-cotp recognises the `*tls.Conn` type itself; a stream that wraps one in another type is treated like TCP. The rule for both is in the doc comment of `WriteTSDU` and in ERRORS.md.
+- **The encoders refuse a CDT above 15 and a TPDU-NR above 127.** `(*CR)`, `(*CC)`, `(*AK)` and `(*RJ).MarshalBinary` return `ErrMissingRequiredField` for a CDT that does not fit its 4 bits, `(*DT)` and `(*ED).MarshalBinary` for a TPDU-NR that does not fit its 7 bits (X.224 §13.3.3, §13.4.3, §13.7.3, §13.8.3, §13.9.3, §13.11.3). Before, they wrote the low bits without an error. A caller that wants those octets masks the value itself before it encodes (`cdt & 0x0F`, `nr & 0x7F`), which writes what the encoder wrote before.
+- **`(*DT).MarshalBinary` writes only what `DecodeDT` reads back as it was built.** It returns `ErrUnsupportedDTVariant` for `Parameters` without a `DestinationRef` (X.224 §13.7.1 a) gives the class 0 and 1 format no variable part) and for a variable part of odd length, which makes LI odd, the extended format (§13.7.4 NOTE). Before, it wrote both, and `DecodeDT` refused them or read them as a different DT. No option restores that output. A normal-format DT with a variable part of even length, and a class 0 and 1 DT without parameters, encode as before; the TP0 service writes only the latter and is not affected.
+- **DC, ER, AK, EA and RJ with octets after their header are refused.** These TPDUs have no data field: their structures end with the header (X.224 §13.6.1, §13.9.1, §13.10.1, §13.11.1, §13.12.1), and a TPDU that does not comply with its structure is invalid (§3.2.16). `DecodeDC`, `DecodeER`, `DecodeAK`, `DecodeEA`, `DecodeRJ`, `Decode` and `DecodeWithRaw` return `ErrLengthMismatch` for them. Before, they decoded the header and dropped the octets after it. A tool that reads such TPDUs, from a capture for example, and wants the old result passes `b[:1+int(b[0])]`, the header that LI announces, once it has checked that `b` is that long. The TP0 service refused or aborted on these TPDUs before and still does; one with octets after its header is now reported as a malformed TPDU (`ErrHandshake`) instead of an unexpected one (`ErrUnexpectedTPDU`, `*UnexpectedTPDUError`).
+
+### Dependencies
+
+- Built on go-tpkt v1.2.0 (was v1.1.0). In go-tpkt v1.2.0 a `Reader` or `Writer` that failed inside a packet stays failed and returns `tpkt.ErrStreamMisaligned` on every later call. go-cotp already ended the connection at the first failure inside a packet, so later calls return that terminal error and `tpkt.ErrStreamMisaligned` does not reach a caller (ERRORS.md). Should a reader or writer in that state ever reach an open connection, the call ends it with `ErrClosed` and is not taken for the end of the caller's context. A module that also imports go-tpkt directly gets v1.2.0 with this release; go-tpkt's RELEASE.md lists its changes.
+
+### Documentation
+
+- The places that v1.3.1 recorded "as it is" now describe the new behaviour: `doc.go`, the doc comments of the encoders, of `DecodeDC`, `DecodeER`, `DecodeAK`, `DecodeEA`, `DecodeRJ` and of `ErrLengthMismatch`, `ErrUnsupportedDTVariant` and `ErrMissingRequiredField`, API.md, ERRORS.md, LIMITATIONS.md, README.md, ARCHITECTURE.md, docs/COMPLIANCE.md (C-CR to C-ER; C-DC and C-RJ are now "pass"), the design table in docs/TP0_API_DESIGN.md and TESTING.md (row L6). `docs/api/go-cotp.md` is regenerated.
+- ERRORS.md has a table of what a write timeout does over a `*tls.Conn` and over any other stream, and says how go-tpkt's failed state is handled.
+
+### Tests
+
+- `TestTSDU_WriteTimeoutOverTLSEndsConnection`: `Connect` and `Accept` over TLS 1.3 on `net.Pipe` in a synctest bubble, the peer not reading; a deadline and a cancellation each end the connection with `ErrClosed` and the context error, with no octet counted, and the next calls, `Close` and the peer see the end. `TestTSDU_IdleReadTimeoutOverTLSKeepsOpen`: an idle read timeout over TLS leaves the connection usable in both directions.
+- `TestMarshal_CDTAndTPDUNRBounds`: CDT 0, 1, 14, 15 and TPDU-NR 0, 1, 126, 127 encode and decode back unchanged; 16, 17, 128, 255 and 128, 129, 255 are refused, for every encoder that writes them.
+- `TestMarshalDT_OnlyFormatsDecodeDTReadsBack`: a class 0 and 1 DT with parameters is refused; a normal-format variable part of 0 to 7 and 248 to 251 octets encodes when LI is even and at most 254, and decodes back.
+- `TestDecode_NoOctetsAfterTheHeaderOfTPDUsWithoutDataField`: each of DC, ER, AK, EA and RJ, with and without a variable part, followed by 1, 2 and 64 octets, through the typed decoder, `Decode` and `DecodeWithRaw`. `TestOpenState_NoDataFieldTPDUWithOctetsAfterHeader`: the same TPDUs in the open state.
+- `TestTSDU_MidPacketFailureThenNextCall`: a deadline and an end of the stream inside a TPKT packet on read, a deadline inside a packet on write; the call after it returns the same terminal error. `TestClassify_MisalignedStreamEndsConnection`: a TPKT reader or writer already in go-tpkt's failed state ends the connection with `ErrClosed`, under every kind of context.
+- The fuzz invariants follow the new rules: `FuzzMarshalParameters` requires every TPDU an encoder writes to decode to the same parameters, and refuses a DT variable part of odd length; the decoder targets require a DC, ER, AK, EA or RJ to end with its header and re-encode to every octet that was read, with a seed that has two octets after the header.
+
+---
+
 ## v1.3.1
 
 **Date:** 2026-11-14

@@ -47,6 +47,43 @@ func headerBounds(b []byte, li uint8, fixedPartLength int) (int, error) {
 	return headerLen, nil
 }
 
+// noDataField refuses octets after the header of a TPDU that X.224 gives no
+// data field. The structures of DC (13.6.1), AK (13.9.1), EA (13.10.1), RJ
+// (13.11.1) and ER (13.12.1) end with the header, and a TPDU that does not
+// comply with its structure is an invalid TPDU (3.2.16).
+func noDataField(b []byte, headerLen int) error {
+	if n := len(b) - headerLen; n > 0 {
+		return fmt.Errorf("%d octets after the header, and this TPDU has no data field: %w", n, ErrLengthMismatch)
+	}
+	return nil
+}
+
+// maxCDT is the largest credit the normal formats carry: CDT is bits 4 to 1
+// of octet 2 (X.224 13.3.3, 13.4.3, 13.9.3, 13.11.3).
+const maxCDT = 0x0F
+
+// maxTPDUNR is the largest sequence number the class 0 and 1 and the normal
+// formats carry: TPDU-NR and ED-TPDU-NR are bits 7 to 1 of their octet
+// (X.224 13.7.3, 13.8.3).
+const maxTPDUNR = 0x7F
+
+// checkCDT refuses a credit that does not fit the 4 bits of the CDT field.
+func checkCDT(cdt uint8) error {
+	if cdt > maxCDT {
+		return fmt.Errorf("CDT %d > %d: %w", cdt, maxCDT, ErrMissingRequiredField)
+	}
+	return nil
+}
+
+// checkTPDUNR refuses a sequence number that does not fit the 7 bits of the
+// TPDU-NR field.
+func checkTPDUNR(nr uint8) error {
+	if nr > maxTPDUNR {
+		return fmt.Errorf("TPDU-NR %d > %d: %w", nr, maxTPDUNR, ErrMissingRequiredField)
+	}
+	return nil
+}
+
 // PeekType classifies the TPDU from the first two octets (LI and type code).
 // It performs only minimal LI sanity; full header/variable-part validation is done by per-TPDU decoders.
 // Returns TypeED, TypeAK, TypeEA, TypeRJ for those codes; reserved/invalid codes return ErrInvalidTPDUCode or ErrReservedTPDU.

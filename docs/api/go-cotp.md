@@ -12,7 +12,7 @@ Service API (preferred for applications):
 
 	Connect / Accept → *Conn → ReadTSDU / WriteTSDU / Close
 
-Connect and Accept take ownership of the net.Conn immediately, perform the Class 0 CR/CC handshake using go-tpkt internally, and return an open \*Conn. Consumers of \*Conn must not use go-tpkt. A \*Conn is full duplex: a reader and writers run concurrently, concurrent writers are serialized per TSDU, and each operation's context bounds only its own direction (SetReadDeadline or SetWriteDeadline). Close unblocks outstanding operations. A context that ends an operation before any octet moved leaves the connection open; once octets have moved, it aborts the connection.
+Connect and Accept take ownership of the net.Conn immediately, perform the Class 0 CR/CC handshake using go-tpkt internally, and return an open \*Conn. Consumers of \*Conn must not use go-tpkt. A \*Conn is full duplex: a reader and writers run concurrently, concurrent writers are serialized per TSDU, and each operation's context bounds only its own direction (SetReadDeadline or SetWriteDeadline). Close unblocks outstanding operations. A context that ends an operation before any octet moved leaves the connection open; once octets have moved, it aborts the connection. Over a \*tls.Conn, a write that its context ends after it wrote to the stream aborts the connection whatever moved, because crypto/tls fails every write after one that timed out.
 
 Codec API (tools / low-level): Decode / MarshalBinary on individual TPDU payloads (no TPKT header). See docs/COMPLIANCE.md and docs/TP0\_API\_DESIGN.md.
 
@@ -35,8 +35,8 @@ Codec policies (documented intentional behavior):
   - Preferred maximum (0xF0) is typed as wire units; generic codec has no ITOT 511-unit clamp.
   - LooksLike\* helpers are classification-only and use the same type masks as PeekType/Decode.
   - A DT is the class 0 and 1 format (LI 2) or the normal class 2 to 4 format (an even LI of 4 or more). An odd LI is the extended format (X.224 13.7.4 NOTE) and is rejected with ErrUnsupportedDTVariant.
-  - DC, ER, AK, EA and RJ carry no user data: octets after their header are ignored on decode and not kept.
-  - Encoders check the lengths they write and otherwise write what they are given: CDT is written as its low 4 bits and TPDU-NR as its low 7 bits, and (\*DT).MarshalBinary does not refuse a DT that DecodeDT would reject (see its comment).
+  - DC, ER, AK, EA and RJ have no data field (X.224 13.6.1, 13.9.1, 13.10.1, 13.11.1, 13.12.1): octets after their header are refused with ErrLengthMismatch.
+  - Encoders refuse what they cannot write as given: a length that does not fit, a CDT above 15 or a TPDU-NR above 127 (ErrMissingRequiredField), and a DT that DecodeDT would not read back as it was built (ErrUnsupportedDTVariant, see (\*DT).MarshalBinary).
 
 Slice aliasing: Returned \[]byte fields (e.g. Parameter.Value, selector slices) may alias the input buffer. Callers must copy if they need to retain or mutate data beyond the lifetime of the input slice. This aliasing behavior is part of the package contract and must not change silently across minor releases. A returned field has no capacity beyond its own octets, so an append to it allocates and never writes into the input buffer or into another field.
 
@@ -112,7 +112,8 @@ var (
 	ErrTooShort = errors.New("cotp: buffer too short")
 	// ErrInvalidLI indicates the length indicator is invalid (e.g. > 254, or shorter than the TPDU fixed part).
 	ErrInvalidLI = errors.New("cotp: invalid length indicator")
-	// ErrLengthMismatch indicates a TPDU length constraint was violated (e.g. CR exceeds 128 octets).
+	// ErrLengthMismatch indicates a TPDU length constraint was violated (e.g. CR exceeds 128 octets, or
+	// octets follow the header of a DC, ER, AK, EA or RJ, which have no data field).
 	ErrLengthMismatch = errors.New("cotp: length mismatch")
 	// ErrUnknownTPDUType indicates the TPDU type code is not recognized.
 	ErrUnknownTPDUType = errors.New("cotp: unknown TPDU type")
@@ -127,7 +128,9 @@ var (
 	// ErrUnsupportedTPDU indicates the TPDU type is structurally valid but not supported by this decoder (reserved or unknown type codes).
 	ErrUnsupportedTPDU = errors.New("cotp: unsupported TPDU type")
 	// ErrUnsupportedDTVariant indicates a DT whose LI is neither 2 nor an even value of 4 or more: the extended
-	// format, which has an odd LI (X.224 13.7.4 NOTE), and LI 0, 1 and 3. This decoder does not support them.
+	// format, which has an odd LI (X.224 13.7.4 NOTE), and LI 0, 1 and 3. This decoder does not support them,
+	// and (*DT).MarshalBinary does not build them: it refuses parameters without a DestinationRef and a
+	// variable part that makes LI odd.
 	ErrUnsupportedDTVariant = errors.New("cotp: unsupported DT variant")
 	// ErrInvalidClassOption indicates an invalid class/option field.
 	ErrInvalidClassOption = errors.New("cotp: invalid class option")
@@ -138,7 +141,8 @@ var (
 	ErrInvalidEDUserDataLength = errors.New("cotp: invalid ED user data length")
 	// ErrNilReceiver indicates a method was called on a nil receiver (e.g. MarshalBinary on nil *CR).
 	ErrNilReceiver = errors.New("cotp: nil receiver")
-	// ErrMissingRequiredField indicates a required field for encode is missing or invalid.
+	// ErrMissingRequiredField indicates a required field for encode is missing or invalid, including a
+	// value that does not fit its wire field (CDT above 15, TPDU-NR above 127).
 	ErrMissingRequiredField = errors.New("cotp: missing required field")
 	// ErrInvalidConfig indicates invalid TP0/ITOT service configuration or callback policy input.
 	ErrInvalidConfig = errors.New("cotp: invalid configuration")
@@ -326,7 +330,7 @@ AK is Acknowledge (X.224 13.9). CDT = octet2 & 0x0F.
 func DecodeAK(b []byte) (*AK, error)
 ```
 
-DecodeAK decodes an Acknowledge TPDU from b. Type check: octet2&0xF0==0x60; CDT = octet2&0x0F.
+DecodeAK decodes an Acknowledge TPDU from b. An AK has no data field (X.224 13.9.1): octets after the header are refused with ErrLengthMismatch. Type check: octet2&0xF0==0x60; CDT = octet2&0x0F.
 
 #### func (AK) MarshalBinary
 
@@ -334,7 +338,7 @@ DecodeAK decodes an Acknowledge TPDU from b. Type check: octet2&0xF0==0x60; CDT 
 func (a *AK) MarshalBinary() ([]byte, error)
 ```
 
-MarshalBinary encodes the AK as a COTP TPDU (X.224 13.9).
+MarshalBinary encodes the AK as a COTP TPDU (X.224 13.9), normal format. A CDT above 15 does not fit its 4 bits and is refused with ErrMissingRequiredField.
 
 #### func (AK) String
 
@@ -391,7 +395,7 @@ DecodeCC decodes a Connection Confirm TPDU from b. Same semantics as DecodeCR fo
 func (c *CC) MarshalBinary() ([]byte, error)
 ```
 
-MarshalBinary encodes the CC as a COTP TPDU (X.224 13.4). Same rules as CR: canonical order 0xC1, 0xC2, 0xC0, 0xF0; then unknown Parameters; then UserData.
+MarshalBinary encodes the CC as a COTP TPDU (X.224 13.4). Same rules as CR: canonical order 0xC1, 0xC2, 0xC0, 0xF0; then unknown Parameters; then UserData. A CDT above 15 does not fit its 4 bits and is refused with ErrMissingRequiredField.
 
 #### func (CC) String
 
@@ -434,7 +438,7 @@ DecodeCR decodes a Connection Request TPDU from b. The buffer must be a complete
 func (c *CR) MarshalBinary() ([]byte, error)
 ```
 
-MarshalBinary encodes the CR as a COTP TPDU (X.224 13.3). Known parameters are emitted in canonical order (0xC1, 0xC2, 0xC0, 0xF0); then unknown Parameters; then UserData. Deterministic: same CR produces same bytes. Total length must be ≤ MaxCRTPDULength.
+MarshalBinary encodes the CR as a COTP TPDU (X.224 13.3). Known parameters are emitted in canonical order (0xC1, 0xC2, 0xC0, 0xF0); then unknown Parameters; then UserData. Deterministic: same CR produces same bytes. Total length must be ≤ MaxCRTPDULength. A CDT above 15 does not fit its 4 bits and is refused with ErrMissingRequiredField.
 
 #### func (CR) String
 
@@ -485,6 +489,12 @@ type Conn struct {
 
 	// metered counts octets per direction; nil when raw is not a
 	// *meteredConn (some unit tests), in which case progress is unknown.
+
+	// writeTimeoutTerminal is set when the stream under metered is a
+	// *tls.Conn. crypto/tls fails every write after one that timed out
+	// (tls.Conn.SetWriteDeadline), and its octet count is of plaintext, not
+	// of the octets on the stream, so a write that timed out cannot be
+	// resumed whatever was counted.
 
 	// connState
 
@@ -573,7 +583,15 @@ func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error
 
 WriteTSDU sends one complete TSDU as one or more minimal Class 0 DT segments. Empty or locally oversized TSDUs are rejected before protocol I/O.
 
-Concurrent writers are serialized for the entire segmented transfer, so segments of different TSDUs never interleave; a writer waiting its turn returns ctx.Err() if ctx ends first. ctx bounds only the write direction (SetWriteDeadline); a concurrent ReadTSDU is unaffected. If ctx ends the write before any octet of the TSDU reached the stream, WriteTSDU returns ctx.Err() and the connection stays open; once octets have moved, the stream may hold a partial TSDU and the connection is aborted.
+Concurrent writers are serialized for the entire segmented transfer, so segments of different TSDUs never interleave; a writer waiting its turn returns ctx.Err() if ctx ends first. ctx bounds only the write direction (SetWriteDeadline); a concurrent ReadTSDU is unaffected.
+
+When ctx ends the write (its deadline passes, or it is cancelled, which go-cotp applies as a past write deadline):
+
+  - before WriteTSDU wrote to the stream (while it waits its turn, or when ctx has already ended), it returns ctx.Err() and the connection stays open, over any stream;
+  - over a \*tls.Conn passed to Connect or Accept, once WriteTSDU has written to the stream, the connection is aborted and the error matches ErrClosed and the context error, also when no octet of the TSDU was accepted: crypto/tls fails every write after one that timed out, so the stream cannot write again;
+  - over any other stream (TCP, for example), when the stream accepted no octet of the TSDU, WriteTSDU returns ctx.Err() and the connection stays open; once octets have moved, the stream may hold a partial TSDU and the connection is aborted (ErrClosed and the context error).
+
+After an abort, every later call returns the same terminal error and Close returns it too; the stream is closed by the abort.
 
 ### type ConnectAction
 
@@ -639,7 +657,7 @@ DC is a Disconnect Confirm TPDU (X.224 13.6).
 func DecodeDC(b []byte) (*DC, error)
 ```
 
-DecodeDC decodes a Disconnect Confirm TPDU from b.
+DecodeDC decodes a Disconnect Confirm TPDU from b. A DC has no data field (X.224 13.6.1): octets after the header are refused with ErrLengthMismatch.
 
 #### func (DC) MarshalBinary
 
@@ -729,7 +747,11 @@ func (d *DT) MarshalBinary() ([]byte, error)
 
 MarshalBinary encodes the DT as a COTP TPDU (X.224 13.7). Minimal format (no DestinationRef, no variable part): LI=2, 2-octet fixed part. Normal format: LI=4+len(variable), 4-octet fixed part, then variable, then user data. UserData nil or zero-length is valid (empty payload). Deterministic for same DT.
 
-MarshalBinary writes what it is given. TPDUNR is written as its low 7 bits. Parameters are written in both formats, although X.224 13.7.1 a) gives the class 0 and 1 format no variable part, and a variable part of odd length makes LI odd. DecodeDT rejects an odd LI (ErrUnsupportedDTVariant) and reads every LI of 4 or more as the normal format, so it does not return such a DT as it was built.
+MarshalBinary writes only the formats DecodeDT reads back as they were built, and refuses the others:
+
+  - a TPDUNR above 127 does not fit its 7 bits: ErrMissingRequiredField;
+  - Parameters without a DestinationRef: X.224 13.7.1 a) gives the class 0 and 1 format no variable part (ErrUnsupportedDTVariant);
+  - a variable part of odd length, which makes LI odd: an odd LI is the extended format (X.224 13.7.4 NOTE), ErrUnsupportedDTVariant.
 
 #### func (DT) String
 
@@ -850,7 +872,7 @@ EA is Expedited Acknowledge (X.224 13.10).
 func DecodeEA(b []byte) (*EA, error)
 ```
 
-DecodeEA decodes an Expedited Acknowledge TPDU from b.
+DecodeEA decodes an Expedited Acknowledge TPDU from b. An EA has no data field (X.224 13.10.1): octets after the header are refused with ErrLengthMismatch.
 
 #### func (EA) MarshalBinary
 
@@ -896,7 +918,7 @@ DecodeED decodes an Expedited Data TPDU from b. User data must be 1–16 octets;
 func (e *ED) MarshalBinary() ([]byte, error)
 ```
 
-MarshalBinary encodes the ED as a COTP TPDU (X.224 13.8). User data must be 1–16 octets.
+MarshalBinary encodes the ED as a COTP TPDU (X.224 13.8), normal format. User data must be 1–16 octets. A TPDUNR above 127 does not fit its 7 bits and is refused with ErrMissingRequiredField.
 
 #### func (ED) String
 
@@ -924,7 +946,7 @@ ER is a TPDU Error (X.224 13.12).
 func DecodeER(b []byte) (*ER, error)
 ```
 
-DecodeER decodes a TPDU Error from b.
+DecodeER decodes a TPDU Error from b. An ER has no data field (X.224 13.12.1): octets after the header are refused with ErrLengthMismatch.
 
 #### func (ER) MarshalBinary
 
@@ -995,7 +1017,7 @@ RJ is Reject (X.224 13.11). No variable part per spec.
 func DecodeRJ(b []byte) (*RJ, error)
 ```
 
-DecodeRJ decodes a Reject TPDU from b. RJ has no variable part; reject any LI > 4 (trailing bytes).
+DecodeRJ decodes a Reject TPDU from b. RJ has no variable part (X.224 13.11.4): an LI above 4 is refused with ErrMalformedParameter. It has no data field either (X.224 13.11.1): octets after the header are refused with ErrLengthMismatch.
 
 #### func (RJ) MarshalBinary
 
@@ -1003,7 +1025,7 @@ DecodeRJ decodes a Reject TPDU from b. RJ has no variable part; reject any LI > 
 func (r *RJ) MarshalBinary() ([]byte, error)
 ```
 
-MarshalBinary encodes the RJ as a COTP TPDU (X.224 13.11). No variable part.
+MarshalBinary encodes the RJ as a COTP TPDU (X.224 13.11), normal format. No variable part. A CDT above 15 does not fit its 4 bits and is refused with ErrMissingRequiredField.
 
 #### func (RJ) String
 

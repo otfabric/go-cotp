@@ -343,12 +343,18 @@ func FuzzDecodeDR(f *testing.F) {
 	fuzzTyped(f, TypeDR, minimalDR, richTPDUs(f)["DR"])
 }
 
+// withTrailingOctets returns tpdu followed by two octets: a seed that a
+// decoder of a TPDU without a data field refuses.
+func withTrailingOctets(tpdu []byte) []byte {
+	return append(bytes.Clone(tpdu), 0xDE, 0xAD)
+}
+
 func FuzzDecodeDC(f *testing.F) {
-	fuzzTyped(f, TypeDC, minimalDC, richTPDUs(f)["DC"])
+	fuzzTyped(f, TypeDC, minimalDC, richTPDUs(f)["DC"], withTrailingOctets(minimalDC))
 }
 
 func FuzzDecodeER(f *testing.F) {
-	fuzzTyped(f, TypeER, minimalER, richTPDUs(f)["ER"])
+	fuzzTyped(f, TypeER, minimalER, richTPDUs(f)["ER"], withTrailingOctets(minimalER))
 }
 
 func FuzzDecodeED(f *testing.F) {
@@ -356,15 +362,15 @@ func FuzzDecodeED(f *testing.F) {
 }
 
 func FuzzDecodeAK(f *testing.F) {
-	fuzzTyped(f, TypeAK, minimalAK, richTPDUs(f)["AK"])
+	fuzzTyped(f, TypeAK, minimalAK, richTPDUs(f)["AK"], withTrailingOctets(minimalAK))
 }
 
 func FuzzDecodeEA(f *testing.F) {
-	fuzzTyped(f, TypeEA, minimalEA, richTPDUs(f)["EA"])
+	fuzzTyped(f, TypeEA, minimalEA, richTPDUs(f)["EA"], withTrailingOctets(minimalEA))
 }
 
 func FuzzDecodeRJ(f *testing.F) {
-	fuzzTyped(f, TypeRJ, minimalRJ, richTPDUs(f)["RJ"])
+	fuzzTyped(f, TypeRJ, minimalRJ, richTPDUs(f)["RJ"], withTrailingOctets(minimalRJ))
 }
 
 // FuzzLooksLikeDoesNotPanic keeps its name for the corpus. The LooksLike

@@ -48,7 +48,7 @@ go-cotp starts no goroutine: there is no `go` statement in production code. The 
 | Local reference | `refOnce`; the allocator has its own mutex |
 | `negotiated` | frozen at construction; `Negotiated()` returns a copy |
 
-The octet counts decide what a cancelled operation does: if no octet of the TSDU moved, the stream is still at a packet boundary, so the call returns `ctx.Err()` and the connection stays open; otherwise the connection is aborted.
+The octet counts decide what a cancelled operation does: if no octet of the TSDU moved, the stream is still at a packet boundary, so the call returns `ctx.Err()` and the connection stays open; otherwise the connection is aborted. Over a `*tls.Conn` the write count is of plaintext that crypto/tls accepted, not of octets on the stream, and crypto/tls fails every write after one that timed out; a write that its context ends after it wrote to a `*tls.Conn` therefore always aborts the connection (`Conn.writeTimeoutTerminal`, set when `Connect` or `Accept` was given a `*tls.Conn`).
 
 ## Platform backends
 

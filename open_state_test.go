@@ -58,6 +58,33 @@ func TestOpenState_UnexpectedTPDUs(t *testing.T) {
 	}
 }
 
+// A DC, ER, AK, EA or RJ followed by octets after its header is not a valid
+// TPDU (they have no data field), so the open state reports it as a
+// malformed TPDU, ErrHandshake, as for any decode failure, and not as an
+// unexpected one; the connection is aborted.
+func TestOpenState_NoDataFieldTPDUWithOctetsAfterHeader(t *testing.T) {
+	for name, v := range map[string]interface{ MarshalBinary() ([]byte, error) }{
+		"DC": &DC{DestinationRef: 1, SourceRef: 2},
+		"ER": &ER{DestinationRef: 1, RejectCause: 1},
+		"AK": &AK{DestinationRef: 1},
+		"EA": &EA{DestinationRef: 1},
+		"RJ": &RJ{DestinationRef: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cli, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
+			payload := append(mustMarshal(t, v), 0xDE, 0xAD)
+			go func() { _ = writeRawTPKT(cli.raw, payload) }()
+			_, err := srv.ReadTSDU(context.Background())
+			if !errors.Is(err, ErrHandshake) || errors.Is(err, ErrUnexpectedTPDU) {
+				t.Fatalf("err = %v, want ErrHandshake (a malformed TPDU)", err)
+			}
+			if srv.terminalKind() != terminalAborted {
+				t.Fatal("want aborted")
+			}
+		})
+	}
+}
+
 func TestOpenState_UnknownTPDUCode(t *testing.T) {
 	cli, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
 	go func() {
@@ -111,12 +138,12 @@ func TestOpenState_DTNonZeroNR(t *testing.T) {
 func TestOpenState_DTIllegalParameter(t *testing.T) {
 	cli, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
 	go func() {
-		dt := &DT{
-			EOT:        true,
-			UserData:   []byte{1},
-			Parameters: []Parameter{{Code: 0x99, Value: []byte{0xAA}}},
-		}
-		_ = writeRawTPKT(cli.raw, mustMarshal(t, dt))
+		// A class 0 DT header followed by parameter 0x99 (one octet 0xAA)
+		// and one octet of user data. MarshalBinary refuses to build it
+		// (the class 0 and 1 format has no variable part), so the octets
+		// are written as a peer would send them.
+		dt := []byte{0x05, 0xF0, 0x80, 0x99, 0x01, 0xAA, 0x01}
+		_ = writeRawTPKT(cli.raw, dt)
 	}()
 	_, err := srv.ReadTSDU(context.Background())
 	if err == nil || !errors.Is(err, ErrHandshake) {

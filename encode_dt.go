@@ -12,40 +12,41 @@ import (
 // Normal format: LI=4+len(variable), 4-octet fixed part, then variable, then user data.
 // UserData nil or zero-length is valid (empty payload). Deterministic for same DT.
 //
-// MarshalBinary writes what it is given. TPDUNR is written as its low 7 bits.
-// Parameters are written in both formats, although X.224 13.7.1 a) gives the
-// class 0 and 1 format no variable part, and a variable part of odd length
-// makes LI odd. DecodeDT rejects an odd LI (ErrUnsupportedDTVariant) and
-// reads every LI of 4 or more as the normal format, so it does not return
-// such a DT as it was built.
+// MarshalBinary writes only the formats DecodeDT reads back as they were
+// built, and refuses the others:
+//   - a TPDUNR above 127 does not fit its 7 bits: ErrMissingRequiredField;
+//   - Parameters without a DestinationRef: X.224 13.7.1 a) gives the class 0
+//     and 1 format no variable part (ErrUnsupportedDTVariant);
+//   - a variable part of odd length, which makes LI odd: an odd LI is the
+//     extended format (X.224 13.7.4 NOTE), ErrUnsupportedDTVariant.
 func (d *DT) MarshalBinary() ([]byte, error) {
 	if d == nil {
 		return nil, fmt.Errorf("marshal DT: %w", ErrNilReceiver)
+	}
+	nr := byte(0)
+	if d.TPDUNR != nil {
+		if err := checkTPDUNR(*d.TPDUNR); err != nil {
+			return nil, fmt.Errorf("marshal DT: %w", err)
+		}
+		nr = *d.TPDUNR
+	}
+	if d.EOT {
+		nr |= 0x80
 	}
 
 	var fixedPart []byte
 	var li int
 
 	if d.DestinationRef == nil {
+		if len(d.Parameters) > 0 {
+			return nil, fmt.Errorf("marshal DT: %d parameters without DestinationRef: the class 0 and 1 format has no variable part: %w",
+				len(d.Parameters), ErrUnsupportedDTVariant)
+		}
 		// Minimal: LI=2, fixed = DT+ROA (0xF0), TPDU-NR+EOT in second octet
-		nr := byte(0)
-		if d.TPDUNR != nil {
-			nr = *d.TPDUNR & 0x7F
-		}
-		if d.EOT {
-			nr |= 0x80
-		}
 		fixedPart = []byte{0xF0, nr}
 		li = 2
 	} else {
 		// Normal: 4-octet fixed
-		nr := byte(0)
-		if d.TPDUNR != nil {
-			nr = *d.TPDUNR & 0x7F
-		}
-		if d.EOT {
-			nr |= 0x80
-		}
 		ref := make([]byte, 2)
 		binary.BigEndian.PutUint16(ref, *d.DestinationRef)
 		fixedPart = []byte{0xF0, ref[0], ref[1], nr}
@@ -61,6 +62,10 @@ func (d *DT) MarshalBinary() ([]byte, error) {
 	li += len(varPart)
 	if li > MaxLI {
 		return nil, fmt.Errorf("marshal DT: header length %d > %d: %w", li, MaxLI, ErrInvalidLI)
+	}
+	if li%2 != 0 {
+		return nil, fmt.Errorf("marshal DT: variable part of %d octets makes LI %d odd, the extended format: %w",
+			len(varPart), li, ErrUnsupportedDTVariant)
 	}
 
 	userData := d.UserData

@@ -4,6 +4,7 @@ package cotp
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"sync"
@@ -58,6 +59,13 @@ type Conn struct {
 	// *meteredConn (some unit tests), in which case progress is unknown.
 	metered *meteredConn
 
+	// writeTimeoutTerminal is set when the stream under metered is a
+	// *tls.Conn. crypto/tls fails every write after one that timed out
+	// (tls.Conn.SetWriteDeadline), and its octet count is of plaintext, not
+	// of the octets on the stream, so a write that timed out cannot be
+	// resumed whatever was counted.
+	writeTimeoutTerminal bool
+
 	negotiated NegotiatedParameters
 	maxTSDU    int
 	profile    SizeProfile
@@ -104,6 +112,9 @@ func newOpenConn(
 		c.writeDeadline = newDirectionDeadline(raw.SetWriteDeadline)
 	}
 	c.metered, _ = raw.(*meteredConn)
+	if c.metered != nil {
+		_, c.writeTimeoutTerminal = c.metered.Conn.(*tls.Conn)
+	}
 	c.state.Store(uint32(stateOpen))
 	return c
 }
