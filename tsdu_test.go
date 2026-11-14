@@ -11,6 +11,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-tpkt"
@@ -122,37 +123,41 @@ func TestTSDU_FullDuplexConcurrent(t *testing.T) {
 }
 
 func TestTSDU_EmptyWriteRejectedNoIO(t *testing.T) {
-	cli, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
-	readStarted := make(chan struct{})
-	errCh := make(chan error, 1)
-	go func() {
-		close(readStarted)
-		_, err := srv.ReadTSDU(context.Background())
-		errCh <- err
-	}()
-	<-readStarted
-	time.Sleep(20 * time.Millisecond)
+	synctest.Test(t, func(t *testing.T) {
+		cli, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := srv.ReadTSDU(context.Background())
+			errCh <- err
+		}()
+		synctest.Wait() // the peer is blocked in ReadTSDU
 
-	if err := cli.WriteTSDU(context.Background(), nil); !errors.Is(err, ErrEmptyTSDU) {
-		t.Fatalf("err = %v, want ErrEmptyTSDU", err)
-	}
-	if err := cli.WriteTSDU(context.Background(), []byte{}); !errors.Is(err, ErrEmptyTSDU) {
-		t.Fatalf("err = %v, want ErrEmptyTSDU", err)
-	}
-
-	// Peer still blocked waiting — no bytes were emitted. Unblock via Close.
-	_ = cli.Close()
-	select {
-	case err := <-errCh:
-		if !errors.Is(err, ErrClosed) && !errors.Is(err, ErrDisconnected) {
-			// Server sees peer close as disconnect; either is fine for "no empty DT sent".
-			if err == nil {
-				t.Fatal("unexpected successful read of empty write")
-			}
+		if err := cli.WriteTSDU(context.Background(), nil); !errors.Is(err, ErrEmptyTSDU) {
+			t.Fatalf("err = %v, want ErrEmptyTSDU", err)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("ReadTSDU not unblocked")
-	}
+		if err := cli.WriteTSDU(context.Background(), []byte{}); !errors.Is(err, ErrEmptyTSDU) {
+			t.Fatalf("err = %v, want ErrEmptyTSDU", err)
+		}
+
+		// No octet was emitted: the peer is still waiting for its first one.
+		synctest.Wait()
+		select {
+		case err := <-errCh:
+			t.Fatalf("peer ReadTSDU returned %v after an empty write", err)
+		default:
+		}
+
+		// The peer sees the stream end at a TSDU boundary, nothing else.
+		_ = cli.Close()
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, ErrDisconnected) || !errors.Is(err, io.EOF) || errors.Is(err, ErrIncompleteTSDU) {
+				t.Fatalf("peer ReadTSDU = %v, want ErrDisconnected with EOF at a TSDU boundary", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("ReadTSDU not unblocked")
+		}
+	})
 }
 
 func TestTSDU_WriteExceedsMaxTSDUNoIO(t *testing.T) {
@@ -316,28 +321,31 @@ func TestTSDU_PeerEOF(t *testing.T) {
 	}
 }
 
+// Contract matrix L3: Close during a blocked read.
 func TestTSDU_LocalCloseUnblocksRead(t *testing.T) {
-	_, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
-	errCh := make(chan error, 1)
-	go func() {
-		_, err := srv.ReadTSDU(context.Background())
-		errCh <- err
-	}()
-	time.Sleep(30 * time.Millisecond)
-	if err := srv.Close(); !errors.Is(err, ErrClosed) {
-		t.Fatalf("Close: %v", err)
-	}
-	select {
-	case err := <-errCh:
-		if !errors.Is(err, ErrClosed) {
-			t.Fatalf("ReadTSDU after Close: %v, want ErrClosed", err)
+	synctest.Test(t, func(t *testing.T) {
+		_, srv := openPipePair(t, 1024, DefaultMaxTSDULength)
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := srv.ReadTSDU(context.Background())
+			errCh <- err
+		}()
+		synctest.Wait() // ReadTSDU is blocked on the stream
+		if err := srv.Close(); !errors.Is(err, ErrClosed) {
+			t.Fatalf("Close: %v", err)
 		}
-		if errors.Is(err, ErrDisconnected) {
-			t.Fatal("local Close must not classify as ErrDisconnected")
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, ErrClosed) {
+				t.Fatalf("ReadTSDU after Close: %v, want ErrClosed", err)
+			}
+			if errors.Is(err, ErrDisconnected) {
+				t.Fatal("local Close must not classify as ErrDisconnected")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("ReadTSDU not unblocked")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("ReadTSDU not unblocked")
-	}
+	})
 }
 
 func TestTSDU_ContextTimeoutAfterIOAborts(t *testing.T) {
@@ -642,30 +650,40 @@ func TestTSDU_ReassemblyBoundAbort(t *testing.T) {
 	}
 }
 
+// Contract matrix L3: Close during a read that holds a partly received TSDU.
 func TestTSDU_LocalCloseMidReassembly(t *testing.T) {
-	cli, srv := openPipePair(t, 128, DefaultMaxTSDULength)
-	errCh := make(chan error, 1)
-	go func() {
-		_, err := srv.ReadTSDU(context.Background())
-		errCh <- err
-	}()
-	// Deliver one non-final segment, then close locally while waiting for more.
-	_ = writeRawTPKT(cli.raw, mustMarshal(t, &DT{EOT: false, UserData: []byte{1}}))
-	time.Sleep(30 * time.Millisecond)
-	if err := srv.Close(); !errors.Is(err, ErrClosed) {
-		t.Fatalf("Close: %v", err)
-	}
-	select {
-	case err := <-errCh:
-		if !errors.Is(err, ErrClosed) {
-			t.Fatalf("err = %v, want ErrClosed", err)
+	synctest.Test(t, func(t *testing.T) {
+		cli, srv := openPipePair(t, 128, DefaultMaxTSDULength)
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := srv.ReadTSDU(context.Background())
+			errCh <- err
+		}()
+		// Deliver one non-final segment, then close locally while waiting for more.
+		if err := writeRawTPKT(cli.raw, mustMarshal(t, &DT{EOT: false, UserData: []byte{1}})); err != nil {
+			t.Fatal(err)
 		}
-		if errors.Is(err, ErrDisconnected) {
-			t.Fatal("local close must not be peer disconnect")
+		synctest.Wait() // the segment is consumed; ReadTSDU is blocked for the next one
+		select {
+		case err := <-errCh:
+			t.Fatalf("ReadTSDU returned %v with the TSDU unfinished", err)
+		default:
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("not unblocked")
-	}
+		if err := srv.Close(); !errors.Is(err, ErrClosed) {
+			t.Fatalf("Close: %v", err)
+		}
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, ErrClosed) {
+				t.Fatalf("err = %v, want ErrClosed", err)
+			}
+			if errors.Is(err, ErrDisconnected) {
+				t.Fatal("local close must not be peer disconnect")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("not unblocked")
+		}
+	})
 }
 
 // writeCapture records TPKT payloads written by a Conn.

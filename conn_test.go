@@ -7,70 +7,78 @@ import (
 	"io"
 	"net"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-tpkt"
 )
 
 func TestConn_LocalCloseUnblocksReadAndWrite(t *testing.T) {
-	// Separate pipes so read and write can block independently.
-	rLocal, rRemote := net.Pipe()
-	wLocal, wRemote := net.Pipe()
-	defer func() { _ = rRemote.Close() }()
-	defer func() { _ = wRemote.Close() }()
-	reader, err := tpkt.NewReader(rLocal, tpkt.ReaderConfig{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	writer, err := tpkt.NewWriter(wLocal)
-	if err != nil {
-		t.Fatal(err)
-	}
-	refs := newReferenceAllocator()
-	ref, err := refs.Allocate()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Conn.Close closes only c.raw; use a stub that closes both directions.
-	raw := &multiCloser{conns: []net.Conn{rLocal, wLocal}}
-	conn := newOpenConn(raw, reader, writer, NegotiatedParameters{
-		Class: Class0, MaxTPDULength: 1024, LocalRef: ref, RemoteRef: 2,
-	}, DefaultMaxTSDULength, SizeProfileRFC1006Compat, ref, refs)
-
-	readErr := make(chan error, 1)
-	writeErr := make(chan error, 1)
-
-	go func() {
-		_, err := conn.reader.ReadPacket()
-		readErr <- err
-	}()
-	go func() {
-		// net.Pipe write blocks until the peer reads; nobody reads wRemote.
-		payload := make([]byte, 64)
-		writeErr <- conn.writer.WritePacket(payload)
-	}()
-
-	time.Sleep(50 * time.Millisecond)
-	if err := conn.Close(); err != nil && !errors.Is(err, ErrClosed) {
-		t.Fatalf("Close: %v", err)
-	}
-
-	select {
-	case err := <-readErr:
-		if err == nil {
-			t.Fatal("ReadPacket returned nil after Close")
+	synctest.Test(t, func(t *testing.T) {
+		// Separate pipes so read and write can block independently.
+		rLocal, rRemote := net.Pipe()
+		wLocal, wRemote := net.Pipe()
+		defer func() { _ = rRemote.Close() }()
+		defer func() { _ = wRemote.Close() }()
+		reader, err := tpkt.NewReader(rLocal, tpkt.ReaderConfig{})
+		if err != nil {
+			t.Fatal(err)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("ReadPacket not unblocked by Close")
-	}
-	select {
-	case err := <-writeErr:
-		if err == nil {
-			t.Fatal("WritePacket returned nil after Close")
+		writer, err := tpkt.NewWriter(wLocal)
+		if err != nil {
+			t.Fatal(err)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("WritePacket not unblocked by Close")
-	}
+		refs := newReferenceAllocator()
+		ref, err := refs.Allocate()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Conn.Close closes only c.raw; use a stub that closes both directions.
+		raw := &multiCloser{conns: []net.Conn{rLocal, wLocal}}
+		conn := newOpenConn(raw, reader, writer, NegotiatedParameters{
+			Class: Class0, MaxTPDULength: 1024, LocalRef: ref, RemoteRef: 2,
+		}, DefaultMaxTSDULength, SizeProfileRFC1006Compat, ref, refs)
+
+		readErr := make(chan error, 1)
+		writeErr := make(chan error, 1)
+
+		go func() {
+			_, err := conn.reader.ReadPacket()
+			readErr <- err
+		}()
+		go func() {
+			// net.Pipe write blocks until the peer reads; nobody reads wRemote.
+			payload := make([]byte, 64)
+			writeErr <- conn.writer.WritePacket(payload)
+		}()
+
+		synctest.Wait() // both the read and the write are blocked on their pipes
+		if err := conn.Close(); !errors.Is(err, ErrClosed) {
+			t.Fatalf("Close: %v", err)
+		}
+
+		// The TPKT reader and writer are used directly here, so the errors
+		// are the stream's, not the classified ones of ReadTSDU and WriteTSDU.
+		select {
+		case err := <-readErr:
+			if !errors.Is(err, io.ErrClosedPipe) {
+				t.Fatalf("ReadPacket after Close = %v, want the closed-stream error", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("ReadPacket not unblocked by Close")
+		}
+		select {
+		case err := <-writeErr:
+			if !errors.Is(err, io.ErrClosedPipe) {
+				t.Fatalf("WritePacket after Close = %v, want the closed-stream error", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("WritePacket not unblocked by Close")
+		}
+		if refs.Len() != 0 {
+			t.Fatalf("%d references held after Close", refs.Len())
+		}
+	})
 }
 
 type multiCloser struct {

@@ -10,6 +10,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-cotp"
@@ -304,25 +305,27 @@ func TestIntegration_OnConnectReject(t *testing.T) {
 }
 
 func TestIntegration_CloseAndEOF(t *testing.T) {
-	cli, srv := openTP0Pair(t,
-		cotp.ClientConfig{MaxTPDULength: 1024},
-		cotp.ServerConfig{MaxTPDULength: 1024},
-	)
-	errCh := make(chan error, 1)
-	go func() {
-		_, err := srv.ReadTSDU(context.Background())
-		errCh <- err
-	}()
-	time.Sleep(20 * time.Millisecond)
-	if err := cli.Close(); !errors.Is(err, cotp.ErrClosed) {
-		t.Fatalf("Close: %v", err)
-	}
-	select {
-	case err := <-errCh:
-		if !errors.Is(err, cotp.ErrDisconnected) || !errors.Is(err, io.EOF) {
-			t.Fatalf("server ReadTSDU after peer Close: %v", err)
+	synctest.Test(t, func(t *testing.T) {
+		cli, srv := openTP0Pair(t,
+			cotp.ClientConfig{MaxTPDULength: 1024},
+			cotp.ServerConfig{MaxTPDULength: 1024},
+		)
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := srv.ReadTSDU(context.Background())
+			errCh <- err
+		}()
+		synctest.Wait() // the server is blocked in ReadTSDU
+		if err := cli.Close(); !errors.Is(err, cotp.ErrClosed) {
+			t.Fatalf("Close: %v", err)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("server not unblocked")
-	}
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, cotp.ErrDisconnected) || !errors.Is(err, io.EOF) {
+				t.Fatalf("server ReadTSDU after peer Close: %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("server not unblocked")
+		}
+	})
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-cotp"
@@ -488,20 +489,22 @@ func TestAdversarial_EndlessNonEOTHitsBound(t *testing.T) {
 }
 
 func TestAdversarial_PeerResetDuringWrite(t *testing.T) {
-	srv, peer := acceptWithRawClient(t, cotp.ServerConfig{MaxTPDULength: 128}, &cotp.CR{TPDUSize: new(uint8(0x07))})
-	errCh := make(chan error, 1)
-	go func() {
-		// Large enough to block on net.Pipe until the peer closes.
-		errCh <- srv.WriteTSDU(context.Background(), bytes.Repeat([]byte{0xAB}, 64*1024))
-	}()
-	time.Sleep(30 * time.Millisecond)
-	_ = peer.Close()
-	select {
-	case err := <-errCh:
-		if err == nil {
-			t.Fatal("WriteTSDU should fail after peer reset")
+	synctest.Test(t, func(t *testing.T) {
+		srv, peer := acceptWithRawClient(t, cotp.ServerConfig{MaxTPDULength: 128}, &cotp.CR{TPDUSize: new(uint8(0x07))})
+		errCh := make(chan error, 1)
+		go func() {
+			// Large enough to block on net.Pipe until the peer closes.
+			errCh <- srv.WriteTSDU(context.Background(), bytes.Repeat([]byte{0xAB}, 64*1024))
+		}()
+		synctest.Wait() // WriteTSDU is blocked on the stream: the peer does not read
+		_ = peer.Close()
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, cotp.ErrDisconnected) || errors.Is(err, cotp.ErrClosed) {
+				t.Fatalf("WriteTSDU = %v, want ErrDisconnected", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("blocked writer not woken")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("blocked writer not woken")
-	}
+	})
 }

@@ -16,13 +16,13 @@ similar codec functions. All are defined in `errors.go` and can be imported as
 | `ErrTooShort` | Input buffer is shorter than required for the TPDU fixed part |
 | `ErrInvalidLI` | Length indicator is invalid (> 254, or shorter than the fixed part) |
 | `ErrLengthMismatch` | TPDU length constraint violated (e.g. CR > 128 octets) |
-| `ErrUnknownTPDUType` | TPDU type code is not defined by X.224 |
-| `ErrInvalidTPDUCode` | TPDU type code is reserved or invalid |
+| `ErrUnknownTPDUType` | Not returned by this version; retained for compatibility. A type code that X.224 does not define is reported as `ErrInvalidTPDUCode` or `ErrReservedTPDU` |
+| `ErrInvalidTPDUCode` | TPDU type code is not defined by X.224, or is not the code of the TPDU a typed decoder expects |
 | `ErrReservedTPDU` | TPDU type code is explicitly reserved |
 | `ErrMalformedParameter` | Variable-part parameter TLV is malformed (e.g. length overrun) |
 | `ErrUnexpectedParameterLength` | Parameter length is outside the allowed range for that type |
 | `ErrUnsupportedTPDU` | TPDU is structurally valid but not decoded by this implementation |
-| `ErrUnsupportedDTVariant` | DT extended-format variant is not supported |
+| `ErrUnsupportedDTVariant` | DT whose LI is neither 2 (class 0 and 1 format) nor an even value of 4 or more (normal class 2 to 4 format): the extended format, which has an odd LI (X.224 §13.7.4 NOTE), and LI 0, 1 and 3 |
 | `ErrInvalidClassOption` | Class/option field is invalid |
 | `ErrDuplicateKnownParameter` | Retained for compatibility; no longer returned (last-wins per X.224 13.2.3) |
 | `ErrInvalidEDUserDataLength` | ED user data length is outside 1–16 octets |
@@ -41,8 +41,8 @@ These are returned by `Connect`, `Accept`, `ReadTSDU`, and `WriteTSDU`.
 |----------|---------------|
 | `ErrEmptyTSDU` | Zero-length TSDU was rejected (local policy) |
 | `ErrTSDUTooLarge` | TSDU exceeds `MaxTSDULength` |
-| `ErrClosed` | Local `Close` was called, or the connection was aborted after I/O (e.g. a context that ended an operation after octets had moved, joined with `context.DeadlineExceeded` / `context.Canceled`) |
-| `ErrDisconnected` | The stream went away: peer EOF, TCP reset, broken pipe, or EOF inside a packet; not a local Close |
+| `ErrClosed` | Local `Close` was called, or the connection was aborted after I/O (e.g. a context that ended an operation after octets had moved, joined with `context.DeadlineExceeded` / `context.Canceled`). Also returned by `ReadTSDU` and `WriteTSDU` on a zero `Conn`, which does not come from `Connect` or `Accept` |
+| `ErrDisconnected` | The stream went away: peer EOF, TCP reset, broken pipe, EOF inside a packet, or a connection timeout reported by the operating system (`ETIMEDOUT`: keep-alive or retransmission without an answer); not a local Close |
 | `ErrConnectionRefused` | Peer sent a DR during the handshake |
 | `ErrUnexpectedTPDU` | Received a TPDU that is not legal in the current phase |
 | `ErrIncompleteTSDU` | EOF or connection abort while reassembling a multi-DT TSDU, or a protocol violation mid-TSDU (then joined with `ErrHandshake`) |
@@ -52,6 +52,12 @@ crossed the stream (an idle read, a stalled first write, or waiting for another
 caller's TSDU to finish) returns the bare `ctx.Err()`, not wrapped in
 `ErrClosed`, and the connection stays usable. The context of one direction
 never affects the other direction.
+
+Only a deadline that go-cotp armed on the stream for the caller's context
+counts as that context ending. A connection timeout reported by the operating
+system (`ETIMEDOUT`) is a disconnect whatever context the caller holds: it
+matches `ErrDisconnected`, never `context.DeadlineExceeded`, and it ends the
+connection, during the handshake and in the open state.
 
 ---
 
@@ -90,9 +96,12 @@ Wraps `ErrUnexpectedTPDU`.
 
 ### `*DisconnectError`
 
-Returned by `Connect`, `Accept`, `ReadTSDU`, and `WriteTSDU` when the stream
-goes away: peer EOF, TCP reset, broken pipe, or EOF inside a packet. `Cause` is
-the underlying error (e.g. `io.EOF`).
+Returned by `ReadTSDU` and `WriteTSDU` when the stream goes away: peer EOF,
+TCP reset, broken pipe, EOF inside a packet, or a connection timeout reported
+by the operating system (`ETIMEDOUT`). `Connect` and `Accept` return it for a
+peer EOF at a packet boundary and for such a connection timeout; another
+stream failure during the handshake comes back as the stream's own error.
+`Cause` is the underlying error (e.g. `io.EOF`).
 
 ```go
 type DisconnectError struct {
@@ -165,8 +174,8 @@ if err != nil {
     switch {
     case errors.Is(err, cotp.ErrTooShort):
         // reassembly or framing issue upstream
-    case errors.Is(err, cotp.ErrUnknownTPDUType):
-        // unknown TPDU type on the wire
+    case errors.Is(err, cotp.ErrInvalidTPDUCode), errors.Is(err, cotp.ErrReservedTPDU):
+        // a type code that X.224 does not define, or reserves
     }
 }
 ```

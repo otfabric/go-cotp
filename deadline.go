@@ -8,6 +8,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -123,8 +124,20 @@ func ctxDoneErr(ctx context.Context) error {
 	return nil
 }
 
-// isTimeout reports whether err is a stream deadline expiry.
+// isTimeout reports whether err is a stream deadline expiry. A connection
+// timeout reported by the kernel also answers true to Timeout(), but it is
+// not a deadline that go-cotp armed for a context: see connTimedOut.
 func isTimeout(err error) bool {
+	if connTimedOut(err) {
+		return false
+	}
 	var netErr net.Error
 	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+// connTimedOut reports whether err is ETIMEDOUT: the kernel gave up on the
+// connection (keep-alive or retransmission without an answer). The stream is
+// gone, so the error is a disconnect and never the end of a context.
+func connTimedOut(err error) bool {
+	return errors.Is(err, syscall.ETIMEDOUT)
 }

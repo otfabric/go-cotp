@@ -34,8 +34,11 @@ Codec policies (documented intentional behavior):
   - Canonical CR/CC encode order (0xC1, 0xC2, 0xC0, 0xF0) is a local deterministic choice, not an X.224 mandate.
   - Preferred maximum (0xF0) is typed as wire units; generic codec has no ITOT 511-unit clamp.
   - LooksLike\* helpers are classification-only and use the same type masks as PeekType/Decode.
+  - A DT is the class 0 and 1 format (LI 2) or the normal class 2 to 4 format (an even LI of 4 or more). An odd LI is the extended format (X.224 13.7.4 NOTE) and is rejected with ErrUnsupportedDTVariant.
+  - DC, ER, AK, EA and RJ carry no user data: octets after their header are ignored on decode and not kept.
+  - Encoders check the lengths they write and otherwise write what they are given: CDT is written as its low 4 bits and TPDU-NR as its low 7 bits, and (\*DT).MarshalBinary does not refuse a DT that DecodeDT would reject (see its comment).
 
-Slice aliasing: Returned \[]byte fields (e.g. Parameter.Value, selector slices) may alias the input buffer. Callers must copy if they need to retain or mutate data beyond the lifetime of the input slice. This aliasing behavior is part of the package contract and must not change silently across minor releases.
+Slice aliasing: Returned \[]byte fields (e.g. Parameter.Value, selector slices) may alias the input buffer. Callers must copy if they need to retain or mutate data beyond the lifetime of the input slice. This aliasing behavior is part of the package contract and must not change silently across minor releases. A returned field has no capacity beyond its own octets, so an append to it allocates and never writes into the input buffer or into another field.
 
 Replay/debug: DecodeWithRaw(b) returns Decoded with Raw set to the exact input slice b (may alias). Decode does not set Raw. On decode error, no partial value is returned, so Raw is unavailable.
 
@@ -123,7 +126,8 @@ var (
 	ErrUnexpectedParameterLength = errors.New("cotp: unexpected parameter length")
 	// ErrUnsupportedTPDU indicates the TPDU type is structurally valid but not supported by this decoder (reserved or unknown type codes).
 	ErrUnsupportedTPDU = errors.New("cotp: unsupported TPDU type")
-	// ErrUnsupportedDTVariant indicates a valid X.224 DT shape (e.g. extended format) that this decoder does not support.
+	// ErrUnsupportedDTVariant indicates a DT whose LI is neither 2 nor an even value of 4 or more: the extended
+	// format, which has an odd LI (X.224 13.7.4 NOTE), and LI 0, 1 and 3. This decoder does not support them.
 	ErrUnsupportedDTVariant = errors.New("cotp: unsupported DT variant")
 	// ErrInvalidClassOption indicates an invalid class/option field.
 	ErrInvalidClassOption = errors.New("cotp: invalid class option")
@@ -144,9 +148,11 @@ var (
 	ErrEmptyTSDU = errors.New("cotp: empty TSDU")
 	// ErrTSDUTooLarge indicates a TSDU exceeds the configured MaxTSDULength.
 	ErrTSDUTooLarge = errors.New("cotp: TSDU exceeds configured maximum")
-	// ErrClosed indicates the local connection was closed (or aborted after I/O).
+	// ErrClosed indicates the local connection was closed (or aborted after I/O), or a Conn that
+	// Connect or Accept did not build.
 	ErrClosed = errors.New("cotp: connection closed")
-	// ErrDisconnected indicates the peer disconnected (EOF/reset), not a local Close.
+	// ErrDisconnected indicates the peer disconnected (EOF, reset, or a connection timeout reported
+	// by the operating system), not a local Close.
 	ErrDisconnected = errors.New("cotp: peer disconnected")
 	// ErrConnectionRefused indicates the peer refused the connection (DR during handshake).
 	ErrConnectionRefused = errors.New("cotp: connection refused")
@@ -489,6 +495,8 @@ type Conn struct {
 
 Conn is an established Class 0 (TP0) COTP connection over a stream.
 
+A Conn comes from Connect or Accept. The zero value is not a connection: its ReadTSDU and WriteTSDU return ErrClosed at once, and its Close returns ErrClosed.
+
 #### func Accept
 
 ```go
@@ -515,7 +523,11 @@ Ownership of conn transfers immediately. On any error, conn is closed and must n
 func (c *Conn) Close() error
 ```
 
-Close performs the TP0 T-DISCONNECT operation by closing the underlying stream. It is idempotent on a non-nil Conn. Nil-receiver Close is not promised.
+Close performs the TP0 T-DISCONNECT operation by closing the underlying stream.
+
+Close is safe to call more than once and from multiple goroutines, and concurrently with ReadTSDU and WriteTSDU: a blocked operation returns ErrClosed, and so does every later one. The stream is closed and the local reference released exactly once, before the first Close returns.
+
+Close does not return nil. It returns ErrClosed when it ended the connection, and on every later call; when the connection had already ended for another reason (the peer went away, a protocol error, a context that ended an operation after octets had moved), it returns that first cause. Nil-receiver Close is not promised.
 
 #### func (Conn) LocalAddr
 
@@ -539,9 +551,11 @@ Negotiated returns a copy of the frozen handshake parameters.
 func (c *Conn) ReadTSDU(ctx context.Context) ([]byte, error)
 ```
 
-ReadTSDU receives one complete TSDU by reassembling minimal Class 0 DT segments until EOT=1. The returned slice is caller-owned and does not alias internal buffers.
+ReadTSDU receives one complete TSDU by reassembling minimal Class 0 DT segments until EOT=1. The returned slice is the caller's: it has no capacity beyond its length, go-cotp keeps no reference to it, and a later call never changes it.
 
 One reader at a time reassembles a TSDU; a concurrent caller waits its turn and returns ctx.Err() if ctx ends first. ctx bounds only the read direction (SetReadDeadline); a concurrent WriteTSDU is unaffected. If ctx ends the read before any octet of the TSDU arrived, ReadTSDU returns ctx.Err() and the connection stays open; once octets have been consumed, the connection is aborted.
+
+Memory: the segments received so far are held in one buffer, whatever their size and number. Its capacity never exceeds MaxTSDULength; while it grows, and when the result is handed over, the old and the new buffer exist together, so a call holds less than twice MaxTSDULength, plus the TPKT packet being read (at most 65535 octets). A partly received TSDU is held until the call returns: until the final segment arrives, ctx ends, the stream fails or the connection is closed. A read loop without a deadline keeps it for as long as the peer leaves the TSDU unfinished.
 
 #### func (Conn) RemoteAddr
 
@@ -701,7 +715,11 @@ DT is a Data TPDU (X.224 13.7). v1 supports minimal (class 0/1) and normal (clas
 func DecodeDT(b []byte) (*DT, error)
 ```
 
-DecodeDT decodes a Data TPDU from b. v1 supports minimal (LI=2) and normal (LI>=4) formats. Extended format (e.g. LI=7 with 7-octet fixed) is rejected with ErrUnsupportedDTVariant. Returned UserData may alias b; see package doc.
+DecodeDT decodes a Data TPDU from b. v1 supports the class 0 and 1 format (LI=2) and the normal class 2 to 4 format (an even LI of 4 or more).
+
+The extended class 2 to 4 format has a 7-octet fixed part, so its LI is odd: X.224 §13.7.4 NOTE states the rule that an even LI is the normal format and an odd LI the extended one. DecodeDT follows it: an odd LI of 5 or more is rejected with ErrUnsupportedDTVariant, as are LI 0, 1 and 3.
+
+Returned UserData and Parameter values alias b and have no capacity beyond their own octets; see package doc.
 
 #### func (DT) MarshalBinary
 
@@ -710,6 +728,8 @@ func (d *DT) MarshalBinary() ([]byte, error)
 ```
 
 MarshalBinary encodes the DT as a COTP TPDU (X.224 13.7). Minimal format (no DestinationRef, no variable part): LI=2, 2-octet fixed part. Normal format: LI=4+len(variable), 4-octet fixed part, then variable, then user data. UserData nil or zero-length is valid (empty payload). Deterministic for same DT.
+
+MarshalBinary writes what it is given. TPDUNR is written as its low 7 bits. Parameters are written in both formats, although X.224 13.7.1 a) gives the class 0 and 1 format no variable part, and a variable part of odd length makes LI odd. DecodeDT rejects an odd LI (ErrUnsupportedDTVariant) and reads every LI of 4 or more as the normal format, so it does not return such a DT as it was built.
 
 #### func (DT) String
 
@@ -1029,6 +1049,15 @@ type ServerConfig struct {
 	MaxTSDULength int
 	// OnConnect decides accept/reject. Nil = defaultAutoAccept.
 	// Indication fields are defensive copies (safe to retain).
+	//
+	// OnConnect runs on the goroutine that called Accept, after the CR was
+	// read and before the CC is written, with the context given to Accept
+	// and while that context's deadline is armed on the stream. No Conn
+	// exists yet, so it has nothing to call back into. A callback that
+	// blocks stalls that handshake only; no other connection waits for it.
+	// It is not interrupted when the context ends: the CC write that follows
+	// then fails. A panic in OnConnect is not recovered: it reaches the
+	// caller of Accept, after Accept has closed the stream.
 	OnConnect   func(context.Context, ConnectIndication) (AcceptDecision, error)
 	SizeProfile SizeProfile
 	// EchoSelectors returns the CR's transport selectors in the CC

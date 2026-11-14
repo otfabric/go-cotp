@@ -2,6 +2,7 @@
 
 **Status:** architecture **frozen**; public API **frozen**; negotiation **implementation-frozen**  
 **Date:** 2026-07-16 (rev. 7.1 + negotiation impl)  
+**Amended:** 2026-11-14 — §5.3 and the size examples of §5.4, §5.6 and §5.11 follow the TPDU size codes in use since v1.0.1  
 **Scope:** RFC 1006 / RFC 2126 Class 0 (TP0) over TPKT via go-tpkt  
 **Related:** [ARCHITECTURE.md](ARCHITECTURE.md), [COMPLIANCE.md](COMPLIANCE.md), [../API.md](../API.md)
 
@@ -487,20 +488,25 @@ ITOT highest safe preferred units: **511** (`512×128 = 65536` exceeds 65531).
 
 ### 5.3 Standard TPDU Size `0xC0` — Class 0 table (X.224 §13.3.4 b)
 
-| Code | Size | Class 0 |
-| --- | ---: | --- |
-| `0x0D` | 8192 | **not allowed** |
-| `0x0C` | 4096 | **not allowed** |
-| `0x0B` | 2048 | allowed |
-| `0x0A` | 1024 | allowed |
-| `0x09` | 512 | allowed |
-| `0x08` | 256 | allowed |
-| `0x07` | 128 | allowed |
+| Code | Size | X.224 class 0 | go-cotp class 0 |
+| --- | ---: | --- | --- |
+| `0x10` | 65536 | not allowed | accepted |
+| `0x0F` | 32768 | not allowed | accepted |
+| `0x0E` | 16384 | not allowed | accepted |
+| `0x0D` | 8192 | not allowed | accepted |
+| `0x0C` | 4096 | not allowed | accepted |
+| `0x0B` | 2048 | allowed | accepted |
+| `0x0A` | 1024 | allowed | accepted |
+| `0x09` | 512 | allowed | accepted |
+| `0x08` | 256 | allowed | accepted |
+| `0x07` | 128 | allowed | accepted |
+
+**Deviation for interoperability (since v1.0.1).** X.224 §13.3.4 b) limits class 0 to the codes `0x07`–`0x0B`. go-cotp accepts `0x07`–`0x10` from a peer and uses the same table for what it sends, because RFC 1006 stacks in the field (IEC 61850 MMS stacks such as libIEC61850 and iec61850bean) negotiate the larger codes in class 0. Any other code fails the handshake with `ErrHandshake`. The decision is recorded in [RELEASE.md](../RELEASE.md) (v1.0.1) and in `size_nego.go`. Rev. 7.1 of this document listed `0x0C` and `0x0D` as not allowed and capped the standard path at 2048; the tables below follow the code. The size in use never exceeds the local `MaxTPDULength` (at most 65531).
 
 ### Fallback algorithm for **our encoder**
 
 ```text
-fallbackStandard = largest Class-0 standard ≤ preferredEffective
+fallbackStandard = largest standard size of the table above ≤ preferredEffective
 ```
 
 | Configured | Preferred effective | `0xC0` fallback |
@@ -509,8 +515,8 @@ fallbackStandard = largest Class-0 standard ≤ preferredEffective
 | 200 | 128 | 128 |
 | 1000 | 896 | 512 |
 | 1024 | 1024 | 1024 |
-| 16384 | 16384 | 2048 |
-| 65531 | 65408 | 2048 |
+| 16384 | 16384 | 16384 |
+| 65531 | 65408 | 32768 |
 
 Decoders must **not** require peer `preferredEffective >= fallbackStandard`.
 
@@ -521,7 +527,7 @@ Decoders must **not** require peer `preferredEffective >= fallbackStandard`.
 | Configured | CR encoding |
 | --- | --- |
 | 0 or 65531 | omit both |
-| exact Class-0 standard 128–2048 | `0xC0` only |
+| exact standard size 128–32768 | `0xC0` only |
 | other ≥ 128 | fallback `0xC0` + `0xF0` |
 
 #### `SizeProfilePreferredMaximum`
@@ -530,9 +536,9 @@ Always proposes `0xF0`, with `0xC0` as legacy fallback.
 
 | Configured | CR encoding |
 | --- | --- |
-| exact Class-0 standard 128–2048 | matching `0xC0` **and** matching `0xF0` |
+| exact standard size 128–32768 | matching `0xC0` **and** matching `0xF0` |
 | non-standard ≥ 128 | fallback `0xC0` + `0xF0` |
-| 0 / 65531 | `0xC0=2048` + `0xF0=511` → 65408 |
+| 0 / 65531 | `0xC0=32768` + `0xF0=511` → 65408 |
 
 ### 5.5 Dual offer: preserve both until path selection
 
@@ -601,10 +607,10 @@ Omitted CR under Compat means the peer effectively proposes **65531**. Do **not*
 | Server effective ceiling | Compat CC response to omitted CR |
 | --- | --- |
 | 65531 | omit size parameters |
-| exact Class-0 standard 128–2048 | send that `0xC0` |
-| non-standard ceiling | send largest Class-0 `0xC0` ≤ ceiling |
+| exact standard size 128–32768 | send that `0xC0` |
+| non-standard ceiling | send largest standard `0xC0` ≤ ceiling |
 
-Examples: server 1024 → `0xC0=1024`; server 1000 → `0xC0=512`; server 16384 → `0xC0=2048`; server 65531 → omit.
+Examples: server 1024 → `0xC0=1024`; server 1000 → `0xC0=512`; server 16384 → `0xC0=16384`; server 65531 → omit.
 
 Under `SizeProfilePreferredMaximum`, a legacy omitted CR is still accepted, but the response remains on the **standard/legacy** path (no manufactured `0xF0`). Profile controls local encoding preference; it cannot invent peer support.
 
@@ -696,12 +702,12 @@ Flooring (`configured / 128`) stays in **service** `preferredUnitsAndEffective` 
 
 | # | Case | Expected |
 | --- | --- | --- |
-| 1 | Configured `0` | Compat omit; PreferredMaximum `0xC0=2048`+`0xF0=511` |
+| 1 | Configured `0` | Compat omit; PreferredMaximum `0xC0=32768`+`0xF0=511` |
 | 2 | Configured `<128` | `ErrInvalidConfig` |
 | 3 | Exact 128 | Compat `0xC0`; PreferredMaximum `0xC0`+`0xF0=1` |
 | 4 | Exact 1024 | Compat `0xC0=0x0A`; PreferredMaximum + `0xF0=8` |
 | 5 | Non-standard 1000 | preferred 896, fallback 512 |
-| 6 | Non-standard 16384 | preferred 16384, fallback 2048 |
+| 6 | 16384 (a standard size since v1.0.1) | Compat `0xC0=0x0E`; PreferredMaximum + `0xF0=128` |
 | 7 | Maximum 65531 | Compat omit; PreferredMaximum → 65408 |
 | 8 | Configured `>65531` | `ErrInvalidConfig` |
 | 9 | Peer neither | omitted; Compat default 65531 (local-capped on CC) |

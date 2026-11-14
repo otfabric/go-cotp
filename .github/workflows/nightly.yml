@@ -25,6 +25,21 @@ jobs:
           name: fuzz-corpus-nightly
           path: "**/testdata/fuzz/"
 
+  # Platform width (otfabric/engineering standards/testing.md#platform-width):
+  # the codec and the size negotiation convert wire integers to int, so the
+  # tests also run where int has 32 bits. ubuntu runners execute 386 binaries;
+  # the race detector does not exist for 386.
+  test-386:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Tests on a 32-bit architecture
+        run: GOARCH=386 go test -count=1 ./...
+
   chaos:
     runs-on: ubuntu-latest
     timeout-minutes: 30

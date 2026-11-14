@@ -25,4 +25,10 @@ jobs:
       bump: ${{ inputs.bump }}
       release-name-prefix: go-cotp
       update-major-tag: false
+      # Direct dependants, built, vetted and tested against the candidate
+      # before the tag is created.
+      consumers: |
+        otfabric/go-mms
+        otfabric/go-iec61850
+        otfabric/go-s7comm
     secrets: inherit

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"math"
+	"strconv"
 	"testing"
 )
 
@@ -124,7 +125,13 @@ func TestEncodePreferredMaxUnits_Boundaries(t *testing.T) {
 // Ceilings and peer offers far above the ITOT maximum never wrap into a small
 // unit count: the selection is either capped at 511 units or rejected.
 func TestSelectPreferredPath_LargeInputs(t *testing.T) {
-	huge := []int{MaxPreferredUnitsITOT*128 + 128, MaxITOTTPDULength, 1 << 31, math.MaxInt32, math.MaxInt}
+	huge := []int{MaxPreferredUnitsITOT*128 + 128, MaxITOTTPDULength, math.MaxInt32, math.MaxInt}
+	if strconv.IntSize > 32 {
+		// One above the 32-bit boundary. Built at run time, so the test
+		// package also compiles where int has 32 bits.
+		over := math.MaxInt32
+		huge = append(huge, over+1)
+	}
 	for _, peer := range huge {
 		for _, srv := range huge {
 			for _, cb := range append([]int{0}, huge...) {

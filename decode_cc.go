@@ -51,7 +51,7 @@ func DecodeCC(b []byte) (*CC, error) {
 		cc.PreferredMaxTPDUSize = res.preferredMaxTPDUSize
 		cc.Parameters = res.parameters
 	}
-	cc.UserData = b[headerLen:]
+	cc.UserData = b[headerLen:len(b):len(b)]
 
 	return cc, nil
 }

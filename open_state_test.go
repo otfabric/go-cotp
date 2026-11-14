@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -202,35 +203,35 @@ func TestOpenState_TerminalCauseStableWithCloseRace(t *testing.T) {
 }
 
 func TestOpenState_BlockedWriterWakesOnReadAbort(t *testing.T) {
-	cli, srv := openPipePair(t, 128, DefaultMaxTSDULength)
+	synctest.Test(t, func(t *testing.T) {
+		cli, srv := openPipePair(t, 128, DefaultMaxTSDULength)
 
-	writeErr := make(chan error, 1)
-	go func() {
-		// Large write that will block on the pipe until the peer aborts/closes.
-		writeErr <- cli.WriteTSDU(context.Background(), make([]byte, 64*1024))
-	}()
-	time.Sleep(30 * time.Millisecond)
+		writeErr := make(chan error, 1)
+		go func() {
+			// Large write that will block on the pipe until the peer aborts/closes.
+			writeErr <- cli.WriteTSDU(context.Background(), make([]byte, 64*1024))
+		}()
+		synctest.Wait() // the writer is blocked: the peer does not read
 
-	go func() {
-		_ = writeRawTPKT(srv.raw, mustMarshal(t, &DR{DestinationRef: 1, SourceRef: 2}))
-	}()
-	_, err := cli.ReadTSDU(context.Background())
-	if !errors.Is(err, ErrUnexpectedTPDU) {
-		t.Fatalf("ReadTSDU: %v", err)
-	}
-
-	select {
-	case err := <-writeErr:
-		if err == nil {
-			t.Fatal("WriteTSDU should fail after peer abort")
+		go func() {
+			_ = writeRawTPKT(srv.raw, mustMarshal(t, &DR{DestinationRef: 1, SourceRef: 2}))
+		}()
+		_, err := cli.ReadTSDU(context.Background())
+		if !errors.Is(err, ErrUnexpectedTPDU) {
+			t.Fatalf("ReadTSDU: %v", err)
 		}
-		// Writer sees the stored terminal cause or a stream error from close.
-		if !errors.Is(err, ErrUnexpectedTPDU) && cli.terminalKind() == terminalNone {
-			t.Fatalf("write err = %v; connection not terminal", err)
+
+		select {
+		case err := <-writeErr:
+			// The read aborted the connection: the blocked writer reports
+			// that first terminal cause, not the stream error of the close.
+			if !errors.Is(err, ErrUnexpectedTPDU) {
+				t.Fatalf("WriteTSDU = %v, want the terminal cause of the abort", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("blocked writer not woken")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("blocked writer not woken")
-	}
+	})
 }
 
 func TestOpenState_PeerEOFPreserved(t *testing.T) {

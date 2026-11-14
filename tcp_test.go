@@ -17,6 +17,39 @@ import (
 
 func openTCPPair(t *testing.T, clientCfg cotp.ClientConfig, serverCfg cotp.ServerConfig) (client, server *cotp.Conn) {
 	t.Helper()
+	return openTCPPairOn(t, clientCfg, serverCfg, func(c net.Conn) net.Conn { return c })
+}
+
+// readWatch wraps a real socket, where testing/synctest cannot tell that a
+// goroutine is blocked, and tells the test when a Read is entered.
+type readWatch struct {
+	net.Conn
+	mu      sync.Mutex
+	entered chan struct{} // closed when the next Read is entered; nil when not armed
+}
+
+// nextRead returns a channel that is closed when the next Read is entered.
+func (w *readWatch) nextRead() <-chan struct{} {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.entered = make(chan struct{})
+	return w.entered
+}
+
+func (w *readWatch) Read(p []byte) (int, error) {
+	w.mu.Lock()
+	if w.entered != nil {
+		close(w.entered)
+		w.entered = nil
+	}
+	w.mu.Unlock()
+	return w.Conn.Read(p)
+}
+
+// openTCPPairOn is openTCPPair with the server's socket passed through wrap
+// before Accept takes it.
+func openTCPPairOn(t *testing.T, clientCfg cotp.ClientConfig, serverCfg cotp.ServerConfig, wrap func(net.Conn) net.Conn) (client, server *cotp.Conn) {
+	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +64,7 @@ func openTCPPair(t *testing.T, clientCfg cotp.ClientConfig, serverCfg cotp.Serve
 			errCh <- err
 			return
 		}
-		srv, err = cotp.Accept(context.Background(), raw, serverCfg)
+		srv, err = cotp.Accept(context.Background(), wrap(raw), serverCfg)
 		errCh <- err
 	}()
 
@@ -174,16 +207,23 @@ func TestTCP_FullDuplex(t *testing.T) {
 }
 
 func TestTCP_CloseEOF(t *testing.T) {
-	cli, srv := openTCPPair(t,
+	var watch *readWatch
+	cli, srv := openTCPPairOn(t,
 		cotp.ClientConfig{MaxTPDULength: 1024},
 		cotp.ServerConfig{MaxTPDULength: 1024},
+		func(c net.Conn) net.Conn { watch = &readWatch{Conn: c}; return watch },
 	)
+	reading := watch.nextRead()
 	errCh := make(chan error, 1)
 	go func() {
 		_, err := srv.ReadTSDU(context.Background())
 		errCh <- err
 	}()
-	time.Sleep(20 * time.Millisecond)
+	select {
+	case <-reading: // ReadTSDU has reached the socket
+	case <-time.After(2 * time.Second):
+		t.Fatal("ReadTSDU did not reach the socket")
+	}
 	if err := cli.Close(); !errors.Is(err, cotp.ErrClosed) {
 		t.Fatalf("Close: %v", err)
 	}

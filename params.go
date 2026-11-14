@@ -18,7 +18,7 @@ type crccVariableResult struct {
 // Each parameter is code (1), length (1), value (length octets).
 // Duplicate known parameters (0xC1, 0xC2, 0xC0, 0xF0) follow X.224 13.2.3: the last value wins.
 // Unknown parameters are appended to the result (all occurrences preserved in order).
-// Value slices may alias b.
+// Value slices alias b and are clipped to their own octets (no spare capacity).
 func parseCRCCVariablePart(b []byte) (*crccVariableResult, error) {
 	r := &crccVariableResult{}
 	pos := 0
@@ -32,7 +32,7 @@ func parseCRCCVariablePart(b []byte) (*crccVariableResult, error) {
 		if pos+length > len(b) {
 			return nil, fmt.Errorf("variable part: length overrun: %w", ErrMalformedParameter)
 		}
-		value := b[pos : pos+length]
+		value := b[pos : pos+length : pos+length]
 		pos += length
 
 		switch code {
@@ -61,7 +61,8 @@ func parseCRCCVariablePart(b []byte) (*crccVariableResult, error) {
 }
 
 // parseVariablePart parses a generic variable part (code+length+value) into a slice of Parameters.
-// Used by DT, DR, DC, ER. Value slices may alias b.
+// Used by DT, DR, DC, ER. Value slices alias b and are clipped to their own
+// octets (no spare capacity).
 func parseVariablePart(b []byte) ([]Parameter, error) {
 	var params []Parameter
 	pos := 0
@@ -75,7 +76,7 @@ func parseVariablePart(b []byte) ([]Parameter, error) {
 		if pos+length > len(b) {
 			return nil, fmt.Errorf("variable part: length overrun: %w", ErrMalformedParameter)
 		}
-		params = append(params, Parameter{Code: code, Value: b[pos : pos+length]})
+		params = append(params, Parameter{Code: code, Value: b[pos : pos+length : pos+length]})
 		pos += length
 	}
 	return params, nil

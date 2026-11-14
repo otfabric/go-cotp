@@ -61,7 +61,7 @@ func DecodeCR(b []byte) (*CR, error) {
 		cr.PreferredMaxTPDUSize = res.preferredMaxTPDUSize
 		cr.Parameters = res.parameters
 	}
-	cr.UserData = b[headerLen:]
+	cr.UserData = b[headerLen:len(b):len(b)]
 
 	return cr, nil
 }
