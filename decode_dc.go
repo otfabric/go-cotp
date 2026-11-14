@@ -10,7 +10,8 @@ import (
 // DC fixed part: 5 octets (code, DST-REF, SRC-REF). Header = LI (1) + this. X.224 13.6.
 const dcFixedPartLength = 5
 
-// DecodeDC decodes a Disconnect Confirm TPDU from b.
+// DecodeDC decodes a Disconnect Confirm TPDU from b. A DC has no data field
+// (X.224 13.6.1): octets after the header are refused with ErrLengthMismatch.
 func DecodeDC(b []byte) (*DC, error) {
 	if len(b) < 1+dcFixedPartLength {
 		return nil, fmt.Errorf("decode DC: %w", ErrTooShort)
@@ -25,6 +26,9 @@ func DecodeDC(b []byte) (*DC, error) {
 	}
 	if b[1] != 0xC0 {
 		return nil, fmt.Errorf("decode DC: not a DC TPDU (code 0x%02x): %w", b[1], ErrInvalidTPDUCode)
+	}
+	if err := noDataField(b, headerLen); err != nil {
+		return nil, fmt.Errorf("decode DC: %w", err)
 	}
 	dc := &DC{
 		DestinationRef: binary.BigEndian.Uint16(b[2:4]),

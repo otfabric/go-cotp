@@ -7,10 +7,15 @@ import (
 	"fmt"
 )
 
-// MarshalBinary encodes the AK as a COTP TPDU (X.224 13.9).
+// MarshalBinary encodes the AK as a COTP TPDU (X.224 13.9), normal format.
+// A CDT above 15 does not fit its 4 bits and is refused with
+// ErrMissingRequiredField.
 func (a *AK) MarshalBinary() ([]byte, error) {
 	if a == nil {
 		return nil, fmt.Errorf("marshal AK: %w", ErrNilReceiver)
+	}
+	if err := checkCDT(a.CDT); err != nil {
+		return nil, fmt.Errorf("marshal AK: %w", err)
 	}
 	varPart, err := encodeVariablePart(a.Parameters)
 	if err != nil {
@@ -22,7 +27,7 @@ func (a *AK) MarshalBinary() ([]byte, error) {
 	}
 	out := make([]byte, 0, 1+li)
 	out = append(out, byte(li))
-	out = append(out, 0x60|(a.CDT&0x0F))
+	out = append(out, 0x60|a.CDT)
 	var ref [2]byte
 	binary.BigEndian.PutUint16(ref[:], a.DestinationRef)
 	out = append(out, ref[:]...)

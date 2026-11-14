@@ -7,14 +7,18 @@ import (
 	"fmt"
 )
 
-// MarshalBinary encodes the ED as a COTP TPDU (X.224 13.8).
-// User data must be 1–16 octets.
+// MarshalBinary encodes the ED as a COTP TPDU (X.224 13.8), normal format.
+// User data must be 1–16 octets. A TPDUNR above 127 does not fit its 7 bits
+// and is refused with ErrMissingRequiredField.
 func (e *ED) MarshalBinary() ([]byte, error) {
 	if e == nil {
 		return nil, fmt.Errorf("marshal ED: %w", ErrNilReceiver)
 	}
 	if e.DestinationRef == nil || e.TPDUNR == nil {
 		return nil, fmt.Errorf("marshal ED: DestinationRef and TPDUNR required: %w", ErrMissingRequiredField)
+	}
+	if err := checkTPDUNR(*e.TPDUNR); err != nil {
+		return nil, fmt.Errorf("marshal ED: %w", err)
 	}
 	userData := e.UserData
 	if userData == nil {
@@ -31,7 +35,7 @@ func (e *ED) MarshalBinary() ([]byte, error) {
 	if li > MaxLI {
 		return nil, fmt.Errorf("marshal ED: header length %d > %d: %w", li, MaxLI, ErrInvalidLI)
 	}
-	nrOctet := *e.TPDUNR & 0x7F
+	nrOctet := *e.TPDUNR
 	if e.EOT {
 		nrOctet |= 0x80
 	}

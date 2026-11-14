@@ -123,7 +123,7 @@ if err := cotpConn.WriteTSDU(ctx, request); err != nil {
 response, err := cotpConn.ReadTSDU(ctx)
 ```
 
-For TLS: dial and complete `tls.Handshake` yourself, then pass the `*tls.Conn` to `Connect` / `Accept` (same ownership rules).
+For TLS: dial and complete `tls.Handshake` yourself, then pass the `*tls.Conn` to `Connect` / `Accept` (same ownership rules). Over TLS a write timeout ends the connection: crypto/tls cannot write again after one, so a `WriteTSDU` that its context ends after it wrote to the stream aborts the `Conn` ([ERRORS.md](ERRORS.md#connection-sentinels)).
 
 ### TP0 server
 
@@ -151,7 +151,7 @@ cotpConn, err := cotp.Accept(hctx, raw, cotp.ServerConfig{
 - `Connect` / `Accept` take ownership of `conn` **immediately** (including on error).
 - Full duplex: a `ReadTSDU` and a `WriteTSDU` run concurrently. Concurrent `WriteTSDU` calls are serialized per TSDU, so segments of different TSDUs never interleave; concurrent `ReadTSDU` calls are likewise serialized (one reassembly at a time).
 - A context bounds only its own direction: `ReadTSDU` uses `SetReadDeadline`, `WriteTSDU` uses `SetWriteDeadline`, and only the `Connect`/`Accept` handshake uses `SetDeadline`. A write timing out never cuts a concurrent read, and vice versa. Do not set deadlines on the underlying `net.Conn` yourself.
-- If a context ends an operation **before any octet** of the TSDU crossed the stream (including while waiting for its turn), the call returns `ctx.Err()` and the connection stays open. Once octets have moved, the connection is aborted (`ErrClosed` + context error), never left half-written.
+- If a context ends an operation **before any octet** of the TSDU crossed the stream (including while waiting for its turn), the call returns `ctx.Err()` and the connection stays open. Once octets have moved, the connection is aborted (`ErrClosed` + context error), never left half-written. Over a `*tls.Conn`, a write that its context ends after it wrote to the stream always aborts the connection.
 - `Close` unblocks outstanding `Connect`/`Accept` waiters on the peer side and local `ReadTSDU`/`WriteTSDU`.
 - Limits: `MaxTPDULength` ∈ `[128, 65531]` (0 → default 65531); `MaxTSDULength` caps reassembled TSDUs (0 → default 4 MiB) and, with it, the memory one `ReadTSDU` call holds; connect data ≤ 32 octets. The full table is in [SECURITY.md](SECURITY.md#resource-limits).
 - A `Conn` comes from `Connect` or `Accept`; on a zero `Conn`, `ReadTSDU` and `WriteTSDU` return `ErrClosed`.

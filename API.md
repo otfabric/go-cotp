@@ -33,6 +33,7 @@ func (c *Conn) RemoteAddr() net.Addr
 - A `Conn` comes from `Connect` or `Accept`. The zero value is not a connection: its `ReadTSDU` and `WriteTSDU` return `ErrClosed` at once.
 - `Close` is safe to call more than once and from multiple goroutines, also while `ReadTSDU` and `WriteTSDU` are blocked. It never returns nil: it returns `ErrClosed` when it wins the terminal cause, and otherwise the first terminal cause. It unblocks waiters by closing the underlying stream, once, and releases the local reference, once.
 - A context that ends an operation before any octet of the TSDU crossed the stream returns `ctx.Err()` (not wrapped in `ErrClosed`) and the connection stays open. Once octets have moved, it aborts the whole connection (`ErrClosed` + context error).
+- Over a `*tls.Conn` a write timeout ends the connection: a `WriteTSDU` that its context ends after it wrote to the stream aborts it (`ErrClosed` + context error), also when no octet was accepted, because crypto/tls fails every write after one that timed out. Reads, and a context that ends before the write starts, follow the rule above. A stream that wraps a `*tls.Conn` in another type is not recognised. The table is in [ERRORS.md](ERRORS.md#connection-sentinels).
 - A reset, broken pipe, EOF inside a packet, or a connection timeout reported by the operating system (`ETIMEDOUT`) aborts with `ErrDisconnected` (`*DisconnectError` carries the cause), joined with `ErrIncompleteTSDU` when it interrupts a TSDU. Only a deadline that go-cotp armed for the caller's context is reported as that context ending.
 - Empty TSDUs are rejected (`ErrEmptyTSDU`). Reassembly is bounded by `MaxTSDULength` (0 → 4 MiB): `ReadTSDU` keeps the segments received so far in one buffer whose capacity never exceeds it, and one call holds less than twice `MaxTSDULength`, plus one TPKT packet, whatever the size and number of the segments. A partly received TSDU is held until the call returns. The slice `ReadTSDU` returns is the caller's and has no capacity beyond its length.
 - `Connect` and `Accept` have no handshake timeout of their own; their context sets it. `ServerConfig.OnConnect` runs on the goroutine that called `Accept`, between the CR and the CC, and stalls only that handshake when it blocks. Limits: [SECURITY.md](SECURITY.md#resource-limits).
@@ -103,7 +104,7 @@ Like `Decode` but on success sets `Decoded.Raw` to the exact input slice `b`. `R
 | `DecodeEA(b []byte) (*EA, error)` | `*EA` | Expedited Acknowledge |
 | `DecodeRJ(b []byte) (*RJ, error)` | `*RJ` | Reject |
 
-DC, ER, AK, EA and RJ carry no user data: octets after their header are ignored by the decoders and not kept. Decoded selectors, parameter values and user data alias `b` and have no capacity beyond their own octets.
+DC, ER, AK, EA and RJ have no data field (X.224 §13.6.1, §13.9.1, §13.10.1, §13.11.1, §13.12.1): octets after their header are refused with `ErrLengthMismatch`. Decoded selectors, parameter values and user data alias `b` and have no capacity beyond their own octets.
 
 ---
 
@@ -126,10 +127,11 @@ Each TPDU type has a `MarshalBinary` method implementing `encoding.BinaryMarshal
 
 Calling `MarshalBinary` on a nil receiver returns an error wrapping `ErrNilReceiver`. Use `errors.Is(err, cotp.ErrNilReceiver)` to detect.
 
-The encoders check the lengths they write (a parameter value above 255 octets, a header above 254, a CR above 128 octets, ED user data outside 1 to 16) and otherwise write what they are given:
+The encoders refuse what they cannot write as given:
 
-- CDT (CR, CC, AK, RJ) is written as its low 4 bits and TPDU-NR (DT, ED) as its low 7 bits; a larger value is not an error.
-- `(*DT).MarshalBinary` writes `Parameters` also when `DestinationRef` is nil, although X.224 §13.7.1 a) gives the class 0 and 1 format no variable part, and it does not refuse a variable part that makes LI odd. `DecodeDT` rejects an odd LI (`ErrUnsupportedDTVariant`) and reads LI 4 or more as the normal format, so such a DT does not decode to the value it was built from.
+- a length that does not fit: a parameter value above 255 octets (`ErrUnexpectedParameterLength`), a header above 254 (`ErrInvalidLI`), a CR above 128 octets (`ErrLengthMismatch`), ED user data outside 1 to 16 (`ErrInvalidEDUserDataLength`);
+- a CDT above 15 (CR, CC, AK, RJ) or a TPDU-NR above 127 (DT, ED), which do not fit their 4 and 7 bits: `ErrMissingRequiredField`;
+- in `(*DT).MarshalBinary`, `Parameters` without a `DestinationRef` (X.224 §13.7.1 a) gives the class 0 and 1 format no variable part) and a variable part of odd length, which would make LI odd, the extended format (§13.7.4 NOTE): `ErrUnsupportedDTVariant`. Every DT it writes, `DecodeDT` reads back as it was built.
 
 ---
 
@@ -401,19 +403,19 @@ Sentinel errors for classification with `errors.Is`. Decode/encode functions wra
 |----------|-------------|
 | `ErrTooShort` | Buffer shorter than required (e.g. no LI or type code). |
 | `ErrInvalidLI` | Length indicator invalid (> 254, or shorter than the TPDU fixed part). |
-| `ErrLengthMismatch` | TPDU length constraint violated (e.g. CR exceeds 128 octets). |
+| `ErrLengthMismatch` | TPDU length constraint violated (a CR above 128 octets, octets after the header of a DC, ER, AK, EA or RJ). |
 | `ErrUnknownTPDUType` | TPDU type code not recognized (currently unused). |
 | `ErrInvalidTPDUCode` | Reserved or invalid TPDU code. |
 | `ErrReservedTPDU` | Reserved TPDU type code. |
 | `ErrMalformedParameter` | Parameter block malformed (e.g. length overrun). |
 | `ErrUnexpectedParameterLength` | Parameter/selector length outside allowed range. |
 | `ErrUnsupportedTPDU` | Structurally valid but unsupported type (reserved/unknown). |
-| `ErrUnsupportedDTVariant` | DT whose LI is neither 2 nor an even value of 4 or more: the extended format (odd LI, X.224 §13.7.4 NOTE) and LI 0, 1, 3. |
+| `ErrUnsupportedDTVariant` | DT whose LI is neither 2 nor an even value of 4 or more: the extended format (odd LI, X.224 §13.7.4 NOTE) and LI 0, 1, 3; on encode, a DT with parameters and no `DestinationRef`, or with a variable part of odd length. |
 | `ErrInvalidClassOption` | Invalid class/option field (currently unused). |
 | `ErrDuplicateKnownParameter` | Retained for compatibility; decode no longer returns it (last-wins). |
 | `ErrInvalidEDUserDataLength` | ED user data not 1–16 octets. |
 | `ErrNilReceiver` | Method called on nil receiver (e.g. `MarshalBinary` on nil `*CR`). |
-| `ErrMissingRequiredField` | Required field for encode missing or invalid. |
+| `ErrMissingRequiredField` | Required field for encode missing or invalid, including a CDT above 15 or a TPDU-NR above 127. |
 | `ErrInvalidConfig` | Invalid TP0/ITOT service configuration or callback policy input. |
 | `ErrHandshake` | TP0 handshake validation failure. |
 | `ErrEmptyTSDU` | Zero-length TSDU rejected (P1 local policy). |

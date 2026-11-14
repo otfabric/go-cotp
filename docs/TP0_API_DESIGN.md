@@ -2,7 +2,7 @@
 
 **Status:** architecture **frozen**; public API **frozen**; negotiation **implementation-frozen**  
 **Date:** 2026-07-16 (rev. 7.1 + negotiation impl)  
-**Amended:** 2026-11-14 — §5.3 and the size examples of §5.4, §5.6 and §5.11 follow the TPDU size codes in use since v1.0.1  
+**Amended:** 2026-11-14 — §5.3 and the size examples of §5.4, §5.6 and §5.11 follow the TPDU size codes in use since v1.0.1; v1.4.0: a write timeout over a `*tls.Conn` ends the connection (§3, TCP EOF and close classification)  
 **Scope:** RFC 1006 / RFC 2126 Class 0 (TP0) over TPKT via go-tpkt  
 **Related:** [ARCHITECTURE.md](ARCHITECTURE.md), [COMPLIANCE.md](COMPLIANCE.md), [../API.md](../API.md)
 
@@ -407,7 +407,7 @@ open ──Close──► closing ──► closed
 | Peer reset / network failure | `ErrDisconnected` + underlying network error |
 | Local `Close()` waking blocked ops | `ErrClosed` (typically also `net.ErrClosed`); **not** `ErrDisconnected` |
 | Context expiry/cancel after I/O started (an octet of the TSDU moved, §7.1) | `ErrClosed` + `ctx.Err()` |
-| Context expiry/cancel before any octet moved | bare `ctx.Err()`; Conn stays open |
+| Context expiry/cancel before any octet moved | bare `ctx.Err()`; Conn stays open. Exception since v1.4.0: a write that the context ends after it wrote to a `*tls.Conn` is `ErrClosed` + `ctx.Err()`, because crypto/tls cannot write again after a write timeout |
 | EOF mid-TSDU reassembly | `ErrIncompleteTSDU` + `ErrDisconnected` + `io.EOF` |
 
 ---

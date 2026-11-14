@@ -11,7 +11,8 @@ var (
 	ErrTooShort = errors.New("cotp: buffer too short")
 	// ErrInvalidLI indicates the length indicator is invalid (e.g. > 254, or shorter than the TPDU fixed part).
 	ErrInvalidLI = errors.New("cotp: invalid length indicator")
-	// ErrLengthMismatch indicates a TPDU length constraint was violated (e.g. CR exceeds 128 octets).
+	// ErrLengthMismatch indicates a TPDU length constraint was violated (e.g. CR exceeds 128 octets, or
+	// octets follow the header of a DC, ER, AK, EA or RJ, which have no data field).
 	ErrLengthMismatch = errors.New("cotp: length mismatch")
 	// ErrUnknownTPDUType indicates the TPDU type code is not recognized.
 	ErrUnknownTPDUType = errors.New("cotp: unknown TPDU type")
@@ -26,7 +27,9 @@ var (
 	// ErrUnsupportedTPDU indicates the TPDU type is structurally valid but not supported by this decoder (reserved or unknown type codes).
 	ErrUnsupportedTPDU = errors.New("cotp: unsupported TPDU type")
 	// ErrUnsupportedDTVariant indicates a DT whose LI is neither 2 nor an even value of 4 or more: the extended
-	// format, which has an odd LI (X.224 13.7.4 NOTE), and LI 0, 1 and 3. This decoder does not support them.
+	// format, which has an odd LI (X.224 13.7.4 NOTE), and LI 0, 1 and 3. This decoder does not support them,
+	// and (*DT).MarshalBinary does not build them: it refuses parameters without a DestinationRef and a
+	// variable part that makes LI odd.
 	ErrUnsupportedDTVariant = errors.New("cotp: unsupported DT variant")
 	// ErrInvalidClassOption indicates an invalid class/option field.
 	ErrInvalidClassOption = errors.New("cotp: invalid class option")
@@ -37,7 +40,8 @@ var (
 	ErrInvalidEDUserDataLength = errors.New("cotp: invalid ED user data length")
 	// ErrNilReceiver indicates a method was called on a nil receiver (e.g. MarshalBinary on nil *CR).
 	ErrNilReceiver = errors.New("cotp: nil receiver")
-	// ErrMissingRequiredField indicates a required field for encode is missing or invalid.
+	// ErrMissingRequiredField indicates a required field for encode is missing or invalid, including a
+	// value that does not fit its wire field (CDT above 15, TPDU-NR above 127).
 	ErrMissingRequiredField = errors.New("cotp: missing required field")
 	// ErrInvalidConfig indicates invalid TP0/ITOT service configuration or callback policy input.
 	ErrInvalidConfig = errors.New("cotp: invalid configuration")

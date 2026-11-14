@@ -10,9 +10,13 @@ import (
 // MarshalBinary encodes the CR as a COTP TPDU (X.224 13.3).
 // Known parameters are emitted in canonical order (0xC1, 0xC2, 0xC0, 0xF0); then unknown Parameters;
 // then UserData. Deterministic: same CR produces same bytes. Total length must be ≤ MaxCRTPDULength.
+// A CDT above 15 does not fit its 4 bits and is refused with ErrMissingRequiredField.
 func (c *CR) MarshalBinary() ([]byte, error) {
 	if c == nil {
 		return nil, fmt.Errorf("marshal CR: %w", ErrNilReceiver)
+	}
+	if err := checkCDT(c.CDT); err != nil {
+		return nil, fmt.Errorf("marshal CR: %w", err)
 	}
 	varPart, err := encodeCRCCVariablePart(c.CallingSelector, c.CalledSelector, c.TPDUSize, c.PreferredMaxTPDUSize, c.Parameters, "CR")
 	if err != nil {
@@ -31,7 +35,7 @@ func (c *CR) MarshalBinary() ([]byte, error) {
 
 	out := make([]byte, 0, total)
 	out = append(out, byte(li))
-	out = append(out, 0xE0|(c.CDT&0x0F)) // CR code + CDT
+	out = append(out, 0xE0|c.CDT) // CR code + CDT
 	var ref [2]byte
 	binary.BigEndian.PutUint16(ref[:], c.DestinationRef)
 	out = append(out, ref[:]...)

@@ -15,19 +15,19 @@ similar codec functions. All are defined in `errors.go` and can be imported as
 |----------|---------------|
 | `ErrTooShort` | Input buffer is shorter than required for the TPDU fixed part |
 | `ErrInvalidLI` | Length indicator is invalid (> 254, or shorter than the fixed part) |
-| `ErrLengthMismatch` | TPDU length constraint violated (e.g. CR > 128 octets) |
+| `ErrLengthMismatch` | TPDU length constraint violated: a CR above 128 octets, or octets after the header of a DC, ER, AK, EA or RJ, which have no data field (X.224 §13.6.1, §13.9.1, §13.10.1, §13.11.1, §13.12.1) |
 | `ErrUnknownTPDUType` | Not returned by this version; retained for compatibility. A type code that X.224 does not define is reported as `ErrInvalidTPDUCode` or `ErrReservedTPDU` |
 | `ErrInvalidTPDUCode` | TPDU type code is not defined by X.224, or is not the code of the TPDU a typed decoder expects |
 | `ErrReservedTPDU` | TPDU type code is explicitly reserved |
 | `ErrMalformedParameter` | Variable-part parameter TLV is malformed (e.g. length overrun) |
 | `ErrUnexpectedParameterLength` | Parameter length is outside the allowed range for that type |
 | `ErrUnsupportedTPDU` | TPDU is structurally valid but not decoded by this implementation |
-| `ErrUnsupportedDTVariant` | DT whose LI is neither 2 (class 0 and 1 format) nor an even value of 4 or more (normal class 2 to 4 format): the extended format, which has an odd LI (X.224 §13.7.4 NOTE), and LI 0, 1 and 3 |
+| `ErrUnsupportedDTVariant` | DT whose LI is neither 2 (class 0 and 1 format) nor an even value of 4 or more (normal class 2 to 4 format): the extended format, which has an odd LI (X.224 §13.7.4 NOTE), and LI 0, 1 and 3. On encode, `(*DT).MarshalBinary` returns it for `Parameters` without a `DestinationRef` (X.224 §13.7.1 a) gives the class 0 and 1 format no variable part) and for a variable part of odd length, which would make LI odd |
 | `ErrInvalidClassOption` | Class/option field is invalid |
 | `ErrDuplicateKnownParameter` | Retained for compatibility; no longer returned (last-wins per X.224 13.2.3) |
 | `ErrInvalidEDUserDataLength` | ED user data length is outside 1–16 octets |
 | `ErrNilReceiver` | `MarshalBinary` called on nil `*CR` / `*CC` / etc. |
-| `ErrMissingRequiredField` | Required encode field is missing or invalid |
+| `ErrMissingRequiredField` | Required encode field is missing or invalid, including a value that does not fit its wire field: a CDT above 15 (CR, CC, AK, RJ) or a TPDU-NR above 127 (DT, ED) |
 | `ErrInvalidConfig` | TP0/ITOT service configuration is invalid |
 | `ErrHandshake` | TP0 CR/CC handshake or open-state protocol validation failed, including a TPKT framing violation by the peer (the go-tpkt sentinel, e.g. `tpkt.ErrInvalidVersion`, stays matchable) |
 
@@ -52,6 +52,24 @@ crossed the stream (an idle read, a stalled first write, or waiting for another
 caller's TSDU to finish) returns the bare `ctx.Err()`, not wrapped in
 `ErrClosed`, and the connection stays usable. The context of one direction
 never affects the other direction.
+
+A write timeout depends on the stream:
+
+| Stream passed to `Connect` / `Accept` | `WriteTSDU` whose context ends while it writes to the stream |
+|---|---|
+| `*tls.Conn` | The connection is aborted: `ErrClosed` joined with the context error, also when no octet was accepted. crypto/tls fails every write after one that timed out (`tls.Conn.SetWriteDeadline`), so the stream cannot write again. |
+| Any other (`*net.TCPConn`, for example) | No octet of the TSDU accepted: the bare `ctx.Err()`, and the connection stays usable. Octets accepted: aborted with `ErrClosed` joined with the context error. |
+
+go-cotp recognises the `*tls.Conn` type itself; a stream that wraps one in
+another type is treated as "any other". A context that ends before `WriteTSDU`
+writes (while it waits its turn) leaves the connection usable over either
+stream, and so does an idle read timeout. After an abort, every later call and
+`Close` return the same terminal error.
+
+go-tpkt (v1.2.0 and later) refuses further use of a TPKT reader or writer
+after an error inside a packet (`tpkt.ErrStreamMisaligned`). go-cotp ends the
+connection at that first error, so later calls return its terminal error and
+`tpkt.ErrStreamMisaligned` does not reach a caller.
 
 Only a deadline that go-cotp armed on the stream for the caller's context
 counts as that context ending. A connection timeout reported by the operating

@@ -95,16 +95,16 @@ PDF page numbers below refer to the ITU-T published page footers where practical
 
 | ID | TPDU | Requirement | Source | Clause | Status | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| C-CR | CR | Fixed part CDT/DST/SRC/ClassOption + var params | X.224 | 13.3 (p.57+) | pass / partial | Typed C1/C2/C0; UserData; CR≤128; many optional CR params still untyped |
-| C-CC | CC | Same family as CR | X.224 | 13.4 | pass / partial | Same as CR minus 128-octet cap |
+| C-CR | CR | Fixed part CDT/DST/SRC/ClassOption + var params | X.224 | 13.3 (p.57+) | pass / partial | Typed C1/C2/C0; UserData; CR≤128; many optional CR params still untyped. Encode refuses a CDT above 15 (`ErrMissingRequiredField`) |
+| C-CC | CC | Same family as CR | X.224 | 13.4 | pass / partial | Same as CR minus 128-octet cap, CDT above 15 refused on encode |
 | C-DR | DR | Refs, reason, params, user data | X.224 | 13.5 | partial | User data exposed; ≤64-octet limit not enforced |
-| C-DC | DC | Refs + params | X.224 | 13.6 | partial | Octets after the header are ignored |
-| C-DT | DT | Minimal (class 0/1) and normal; extended optional | X.224 | 13.7 | partial | Decode: minimal LI=2 and normal with an even LI ≥ 4. An odd LI is the extended format (§13.7.4 NOTE: even LI normal, odd LI extended) and is **rejected** (`ErrUnsupportedDTVariant`), as are LI 0, 1 and 3. Encode: ROA bit not modeled (always 0); TPDU-NR written as its low 7 bits; parameters are written also in the minimal format (§13.7.1 a) gives it no variable part) and a variable part that makes LI odd is not refused, so the encoder can build a DT the decoder rejects. Class 0 user data per DT = negotiated TPDU size − 3 (§13.7.5); see E-09 vs RFC 1006 65524 |
-| C-ED | ED | Normal/extended; user data 1–16 | X.224 | 13.8 | partial | Normal only: the extended format is not recognised and no LI rule is applied; 1–16 enforced; RFC 1006/2126 use DT-like ED for TP0 — **profile conflict** (see E/F) |
-| C-AK | AK | Normal/extended + CDT | X.224 | 13.9 | partial | Normal only: the extended format is not recognised. Octets after the header are ignored. CDT written as its low 4 bits on encode |
-| C-EA | EA | Normal/extended | X.224 | 13.10 | partial | Normal only: the extended format is not recognised. Octets after the header are ignored |
-| C-RJ | RJ | Fixed; no variable part | X.224 | 13.11 | partial | LI must be exactly 4 (LI&lt;4 → ErrInvalidLI; LI&gt;4 → ErrMalformedParameter). Octets after the header are ignored. CDT written as its low 4 bits on encode |
-| C-ER | ER | DST-REF, reject cause, params | X.224 | 13.12 | partial | Cause values not enum-checked. Octets after the header are ignored |
+| C-DC | DC | Refs + params | X.224 | 13.6 | pass | No data field (§13.6.1): octets after the header are refused (`ErrLengthMismatch`) |
+| C-DT | DT | Minimal (class 0/1) and normal; extended optional | X.224 | 13.7 | partial | Decode: minimal LI=2 and normal with an even LI ≥ 4. An odd LI is the extended format (§13.7.4 NOTE: even LI normal, odd LI extended) and is **rejected** (`ErrUnsupportedDTVariant`), as are LI 0, 1 and 3. Encode: ROA bit not modeled (always 0); a TPDU-NR above 127 is refused (`ErrMissingRequiredField`); parameters without a `DestinationRef` (§13.7.1 a) gives the minimal format no variable part) and a variable part of odd length, which would make LI odd, are refused (`ErrUnsupportedDTVariant`), so every DT the encoder writes decodes back as it was built. Class 0 user data per DT = negotiated TPDU size − 3 (§13.7.5); see E-09 vs RFC 1006 65524 |
+| C-ED | ED | Normal/extended; user data 1–16 | X.224 | 13.8 | partial | Normal only: the extended format is not recognised and no LI rule is applied; 1–16 enforced; a TPDU-NR above 127 refused on encode; RFC 1006/2126 use DT-like ED for TP0 — **profile conflict** (see E/F) |
+| C-AK | AK | Normal/extended + CDT | X.224 | 13.9 | partial | Normal only: the extended format is not recognised. No data field (§13.9.1): octets after the header are refused (`ErrLengthMismatch`). A CDT above 15 is refused on encode |
+| C-EA | EA | Normal/extended | X.224 | 13.10 | partial | Normal only: the extended format is not recognised. No data field (§13.10.1): octets after the header are refused (`ErrLengthMismatch`) |
+| C-RJ | RJ | Fixed; no variable part | X.224 | 13.11 | pass | LI must be exactly 4 (LI&lt;4 → ErrInvalidLI; LI&gt;4 → ErrMalformedParameter). No data field (§13.11.1): octets after the header are refused (`ErrLengthMismatch`). A CDT above 15 is refused on encode |
+| C-ER | ER | DST-REF, reject cause, params | X.224 | 13.12 | partial | Cause values not enum-checked. No data field (§13.12.1): octets after the header are refused (`ErrLengthMismatch`) |
 
 ---
 
@@ -197,7 +197,7 @@ Classification-only; **must never be presented as validation**. `LooksLikeDT` us
 
 | Sentinel | Issue |
 | --- | --- |
-| `ErrLengthMismatch` | **Used** for CR total length > `MaxCRTPDULength` (128) |
+| `ErrLengthMismatch` | **Used** for CR total length > `MaxCRTPDULength` (128), and for octets after the header of DC, ER, AK, EA and RJ |
 | `ErrUnknownTPDUType` | Unused |
 | `ErrInvalidClassOption` | Unused |
 | `ErrUnsupportedTPDU` | Effectively unreachable via `PeekType` |

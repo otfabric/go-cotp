@@ -11,7 +11,9 @@ import (
 const rjFixedPartLength = 4
 
 // DecodeRJ decodes a Reject TPDU from b.
-// RJ has no variable part; reject any LI > 4 (trailing bytes).
+// RJ has no variable part (X.224 13.11.4): an LI above 4 is refused with
+// ErrMalformedParameter. It has no data field either (X.224 13.11.1): octets
+// after the header are refused with ErrLengthMismatch.
 func DecodeRJ(b []byte) (*RJ, error) {
 	if len(b) < 1+rjFixedPartLength {
 		return nil, fmt.Errorf("decode RJ: %w", ErrTooShort)
@@ -23,11 +25,15 @@ func DecodeRJ(b []byte) (*RJ, error) {
 	if li > uint8(rjFixedPartLength) {
 		return nil, fmt.Errorf("decode RJ: LI=%d (RJ has no variable part): %w", li, ErrMalformedParameter)
 	}
-	if _, err := headerBounds(b, li, rjFixedPartLength); err != nil {
+	headerLen, err := headerBounds(b, li, rjFixedPartLength)
+	if err != nil {
 		return nil, fmt.Errorf("decode RJ: %w", err)
 	}
 	if b[1]&0xF0 != 0x50 {
 		return nil, fmt.Errorf("decode RJ: not an RJ TPDU (code 0x%02x): %w", b[1], ErrInvalidTPDUCode)
+	}
+	if err := noDataField(b, headerLen); err != nil {
+		return nil, fmt.Errorf("decode RJ: %w", err)
 	}
 	rj := &RJ{
 		CDT:            b[1] & 0x0F,

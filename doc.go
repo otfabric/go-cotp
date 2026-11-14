@@ -14,7 +14,9 @@
 // operation's context bounds only its own direction (SetReadDeadline or
 // SetWriteDeadline). Close unblocks outstanding operations. A context that ends
 // an operation before any octet moved leaves the connection open; once octets
-// have moved, it aborts the connection.
+// have moved, it aborts the connection. Over a *tls.Conn, a write that its
+// context ends after it wrote to the stream aborts the connection whatever
+// moved, because crypto/tls fails every write after one that timed out.
 //
 // Codec API (tools / low-level): Decode / MarshalBinary on individual TPDU
 // payloads (no TPKT header). See docs/COMPLIANCE.md and docs/TP0_API_DESIGN.md.
@@ -37,10 +39,11 @@
 //   - LooksLike* helpers are classification-only and use the same type masks as PeekType/Decode.
 //   - A DT is the class 0 and 1 format (LI 2) or the normal class 2 to 4 format (an even LI of 4 or more).
 //     An odd LI is the extended format (X.224 13.7.4 NOTE) and is rejected with ErrUnsupportedDTVariant.
-//   - DC, ER, AK, EA and RJ carry no user data: octets after their header are ignored on decode and not kept.
-//   - Encoders check the lengths they write and otherwise write what they are given: CDT is written as
-//     its low 4 bits and TPDU-NR as its low 7 bits, and (*DT).MarshalBinary does not refuse a DT that
-//     DecodeDT would reject (see its comment).
+//   - DC, ER, AK, EA and RJ have no data field (X.224 13.6.1, 13.9.1, 13.10.1, 13.11.1, 13.12.1): octets
+//     after their header are refused with ErrLengthMismatch.
+//   - Encoders refuse what they cannot write as given: a length that does not fit, a CDT above 15 or a
+//     TPDU-NR above 127 (ErrMissingRequiredField), and a DT that DecodeDT would not read back as it was
+//     built (ErrUnsupportedDTVariant, see (*DT).MarshalBinary).
 //
 // Slice aliasing: Returned []byte fields (e.g. Parameter.Value, selector slices)
 // may alias the input buffer. Callers must copy if they need to retain or mutate

@@ -10,7 +10,9 @@ import (
 // EA fixed part: 4 octets (code, DST-REF, YR-EDTU-NR). Header = LI (1) + this. X.224 13.10.
 const eaFixedPartLength = 4
 
-// DecodeEA decodes an Expedited Acknowledge TPDU from b.
+// DecodeEA decodes an Expedited Acknowledge TPDU from b. An EA has no data
+// field (X.224 13.10.1): octets after the header are refused with
+// ErrLengthMismatch.
 func DecodeEA(b []byte) (*EA, error) {
 	if len(b) < 1+eaFixedPartLength {
 		return nil, fmt.Errorf("decode EA: %w", ErrTooShort)
@@ -25,6 +27,9 @@ func DecodeEA(b []byte) (*EA, error) {
 	}
 	if b[1] != 0x20 {
 		return nil, fmt.Errorf("decode EA: not an EA TPDU (code 0x%02x): %w", b[1], ErrInvalidTPDUCode)
+	}
+	if err := noDataField(b, headerLen); err != nil {
+		return nil, fmt.Errorf("decode EA: %w", err)
 	}
 	ea := &EA{
 		DestinationRef: binary.BigEndian.Uint16(b[2:4]),

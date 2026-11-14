@@ -38,9 +38,11 @@ CI (`.github/workflows/ci.yml`) runs the shared go-ci workflow on Go 1.26 and 1.
 | `tpkt_integration_test.go` | Composition with go-tpkt |
 | `leak_race_test.go`, `duplex_test.go`, `deadline_test.go` | Unblocking on close, concurrency, per-direction deadlines |
 | `lifecycle_test.go` | The lifecycle contract matrix below: concurrent Close, Close during a write, a handshake whose context ends, a slow `OnConnect`, a failed `Connect` |
-| `disconnect_classify_test.go` | A connection timeout of the operating system is a disconnect, not a context ending; the zero `Conn` |
+| `disconnect_classify_test.go` | A connection timeout of the operating system is a disconnect, not a context ending; the zero `Conn`; a failure inside a TPKT packet and the call after it, and go-tpkt's failed state (`tpkt.ErrStreamMisaligned`) ending the connection |
+| `tls_test.go` | `Connect` and `Accept` over a `*tls.Conn` (TLS 1.3 over `net.Pipe` in a synctest bubble): a write timeout ends the connection, an idle read timeout does not |
 | `tsdu_budget_test.go` | Allocation budget of `MaxTSDULength`: memory held and allocated by a pending reassembly, at the default limit and at 64 KiB |
-| `codec_invariants_test.go` | The invariants the decoder fuzz targets assert; every prefix of a valid TPDU; the LI rule of the DT; decoded slices are clipped |
+| `codec_invariants_test.go` | The invariants the decoder fuzz targets assert; every prefix of a valid TPDU; the LI rule of the DT; decoded slices are clipped; no octets after the header of DC, ER, AK, EA and RJ |
+| `encode_bounds_test.go` | Encoder bounds: parameter and selector lengths, CDT and TPDU-NR at 15/16 and 127/128, the DT formats `(*DT).MarshalBinary` refuses, `FuzzMarshalParameters` |
 | `script_conn_test.go` | Test streams: `scriptConn` plays a script and reports when its reader waits for more |
 | `engine_fuzz_test.go` | Fuzz at the engine boundary |
 
@@ -69,7 +71,7 @@ The matrix of otfabric/engineering `standards/lifecycle.md`, for `*Conn`, the on
 | L3 Close during a blocked read | yes | `TestTSDU_LocalCloseUnblocksRead`, `TestTSDU_LocalCloseMidReassembly`, `TestLeak_CloseUnblocksReadTSDU`: the read returns `ErrClosed` |
 | L4 Close during a write | yes | `TestLifecycle_CloseDuringWrite` (the write returns `ErrClosed`; the stream ends inside the interrupted segment and nothing follows it), `TestLeak_CloseUnblocksWriteTSDU` |
 | L5 Close during the handshake | as the context ending | No `Conn` exists during the handshake, so there is nothing to close: the row is the context of `Connect` or `Accept` ending. `TestLifecycle_HandshakeContextEnds` (`ErrClosed` with the context's error, reference released, stream closed, for a cancellation and for a deadline), `TestConnect_ContextCancelAfterIOStartsClosesStream`, `TestConnect_ContextCanceledBeforeIO`, `TestTCP_CancelUnblocksConnect`; a peer that closes instead: `TestLeak_CloseUnblocksConnect`, `TestLeak_CloseUnblocksAccept` |
-| L6 Cancel a pending request | n/a | No request and response correlation. The analogue, an operation cancelled before any octet moved leaves the connection usable, is covered by `TestTSDU_IdleContextTimeoutKeepsOpen`, `TestLeak_TimeoutGoroutineExits`, `TestDuplex_CancelInterruptsOnlyItsDirection` and `TestDuplex_QueuedWriterHonoursContext`; it is not covered over TLS ([LIMITATIONS.md](LIMITATIONS.md#behaviour-to-know)) |
+| L6 Cancel a pending request | n/a | No request and response correlation. The analogue, an operation cancelled before any octet moved leaves the connection usable, is covered by `TestTSDU_IdleContextTimeoutKeepsOpen`, `TestLeak_TimeoutGoroutineExits`, `TestDuplex_CancelInterruptsOnlyItsDirection` and `TestDuplex_QueuedWriterHonoursContext`. Over TLS it holds for reads (`TestTSDU_IdleReadTimeoutOverTLSKeepsOpen`); a write timeout over TLS ends the connection instead (`TestTSDU_WriteTimeoutOverTLSEndsConnection`, [ERRORS.md](ERRORS.md#connection-sentinels)) |
 | L7 Response after a timeout | n/a | No pending requests |
 | L8 Response after reconnect | n/a | No reconnect |
 | L9 Callback calls a public method | n/a | `OnConnect` runs before a `Conn` exists and receives copies: it has nothing to call back into |
@@ -87,7 +89,7 @@ The minimum is 90% of statements of the root package. It is set in `Makefile` (`
 
 ## Fuzz invariants
 
-The decoder targets (`FuzzDecode`, `FuzzDecodeCR` to `FuzzDecodeRJ`, `FuzzMarshalDecodeRoundTrip`) share one oracle, `assertDecodeInvariants` in `codec_invariants_test.go`: a failure matches a sentinel of [ERRORS.md](ERRORS.md) and returns no value; a success exposes only clipped sub-slices of the input, encodes again, decodes from that encoding to a deeply equal value, and, for the types with one encoding, gives back the octets that were read. `FuzzParseVariablePart` and `FuzzParseCRCCVariablePart` assert the same for the parameter parsers, and `FuzzLooksLikeDoesNotPanic` that the classification helpers agree with `PeekType`. `TestDecode_EveryPrefixOfValidTPDUs` walks every prefix of the golden fixtures in `testdata/unit/` and of TPDUs with a variable part.
+The decoder targets (`FuzzDecode`, `FuzzDecodeCR` to `FuzzDecodeRJ`, `FuzzMarshalDecodeRoundTrip`) share one oracle, `assertDecodeInvariants` in `codec_invariants_test.go`: a failure matches a sentinel of [ERRORS.md](ERRORS.md) and returns no value; a success exposes only clipped sub-slices of the input, encodes again, decodes from that encoding to a deeply equal value, and, for the types with one encoding, gives back the octets that were read; a DC, ER, AK, EA or RJ that decodes ends with its header. `FuzzMarshalParameters` asserts that every TPDU an encoder writes decodes to the same parameters. `FuzzParseVariablePart` and `FuzzParseCRCCVariablePart` assert the same for the parameter parsers, and `FuzzLooksLikeDoesNotPanic` that the classification helpers agree with `PeekType`. `TestDecode_EveryPrefixOfValidTPDUs` walks every prefix of the golden fixtures in `testdata/unit/` and of TPDUs with a variable part.
 
 ## Fuzz regressions
 

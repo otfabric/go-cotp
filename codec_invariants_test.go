@@ -137,19 +137,17 @@ func marshalDecoded(d Decoded) ([]byte, error) {
 // normalised on encode).
 //
 // DT: the whole input, with the ROA bit cleared (the encoder does not model
-// it, COMPLIANCE.md C-DT). DR and ED: the whole input. DC, ER, AK, EA and RJ
-// carry no user data: the header, without the octets after it, which the
-// decoders ignore (COMPLIANCE.md C-DC, C-ER, C-AK, C-EA, C-RJ).
+// it, COMPLIANCE.md C-DT). DR, ED, and DC, ER, AK, EA and RJ, which have no
+// data field and are refused with octets after their header: the whole
+// input.
 func canonicalOctets(typ TPDUType, input []byte) ([]byte, bool) {
 	switch typ {
 	case TypeDT:
 		want := bytes.Clone(input)
 		want[1] = 0xF0
 		return want, true
-	case TypeDR, TypeED:
+	case TypeDR, TypeED, TypeDC, TypeER, TypeAK, TypeEA, TypeRJ:
 		return input, true
-	case TypeDC, TypeER, TypeAK, TypeEA, TypeRJ:
-		return input[:1+int(input[0])], true
 	case TypeCR, TypeCC:
 	}
 	return nil, false
@@ -225,7 +223,20 @@ func assertDecodeInvariants(t *testing.T, input []byte, d Decoded, err error) {
 		if input[0] != 4 {
 			t.Fatalf("RJ with LI %d accepted", input[0])
 		}
-	case TypeCC, TypeDR, TypeDC, TypeER, TypeAK, TypeEA:
+		assertNoDataField(t, d.Type, input)
+	case TypeDC, TypeER, TypeAK, TypeEA:
+		assertNoDataField(t, d.Type, input)
+	case TypeCC, TypeDR:
+	}
+}
+
+// assertNoDataField checks that a decoded DC, ER, AK, EA or RJ ended with
+// its header: these TPDUs have no data field (X.224 13.6.1, 13.9.1,
+// 13.10.1, 13.11.1, 13.12.1).
+func assertNoDataField(t *testing.T, typ TPDUType, input []byte) {
+	t.Helper()
+	if header := 1 + int(input[0]); len(input) != header {
+		t.Fatalf("%s with %d octets after its header accepted", typ, len(input)-header)
 	}
 }
 
@@ -589,6 +600,58 @@ func TestDecodeDT_OddLIIsTheExtendedFormat(t *testing.T) {
 			} {
 				if err := decode(tc.b); !errors.Is(err, ErrUnsupportedDTVariant) {
 					t.Errorf("%s(% x) = %v, want ErrUnsupportedDTVariant", entry, tc.b, err)
+				}
+			}
+		})
+	}
+}
+
+// DC, ER, AK, EA and RJ have no data field: their structures end with the
+// header (X.224 13.6.1, 13.9.1, 13.10.1, 13.11.1, 13.12.1), and a TPDU that
+// does not comply with its structure is invalid (3.2.16). Every decoder
+// entry point refuses octets after their header with ErrLengthMismatch, and
+// decodes the same TPDU without them.
+func TestDecode_NoOctetsAfterTheHeaderOfTPDUsWithoutDataField(t *testing.T) {
+	ref, src := uint16(0x1234), uint16(0x5678)
+	param := []Parameter{{Code: 0x85, Value: []byte{0xAA, 0xBB}}}
+	tpdus := map[string]interface{ MarshalBinary() ([]byte, error) }{
+		"DC":                    &DC{DestinationRef: ref, SourceRef: src},
+		"DC with a parameter":   &DC{DestinationRef: ref, SourceRef: src, Parameters: param},
+		"ER":                    &ER{DestinationRef: ref, RejectCause: 2},
+		"ER with a parameter":   &ER{DestinationRef: ref, RejectCause: 2, Parameters: param},
+		"AK":                    &AK{CDT: 3, DestinationRef: ref, YRTUNR: 4},
+		"AK with a parameter":   &AK{CDT: 3, DestinationRef: ref, YRTUNR: 4, Parameters: param},
+		"EA":                    &EA{DestinationRef: ref, YREDTUNR: 4},
+		"EA with a parameter":   &EA{DestinationRef: ref, YREDTUNR: 4, Parameters: param},
+		"RJ (no variable part)": &RJ{CDT: 3, DestinationRef: ref, YRTUNR: 4},
+	}
+	entries := map[string]func([]byte) error{
+		"Decode":        func(b []byte) error { _, err := Decode(b); return err },
+		"DecodeWithRaw": func(b []byte) error { _, err := DecodeWithRaw(b); return err },
+	}
+	for name, v := range tpdus {
+		t.Run(name, func(t *testing.T) {
+			header, err := v.MarshalBinary()
+			if err != nil {
+				t.Fatal(err)
+			}
+			whole, err := Decode(header)
+			if err != nil {
+				t.Fatalf("% x without octets after the header: %v", header, err)
+			}
+			typed := typedDecoders[whole.Type]
+			if d, err := typed(header); err != nil || !reflect.DeepEqual(d, whole) {
+				t.Fatalf("%s decoder on % x: %v, %v", whole.Type, header, describe(d), err)
+			}
+			for _, extra := range [][]byte{{0x00}, {0xDE, 0xAD}, bytes.Repeat([]byte{0x01}, 64)} {
+				b := append(bytes.Clone(header), extra...)
+				if _, err := typed(b); !errors.Is(err, ErrLengthMismatch) {
+					t.Errorf("%s decoder with %d octets after the header: %v, want ErrLengthMismatch", whole.Type, len(extra), err)
+				}
+				for entry, decode := range entries {
+					if err := decode(b); !errors.Is(err, ErrLengthMismatch) {
+						t.Errorf("%s with %d octets after the header: %v, want ErrLengthMismatch", entry, len(extra), err)
+					}
 				}
 			}
 		})

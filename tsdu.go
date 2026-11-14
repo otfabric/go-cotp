@@ -9,6 +9,8 @@ import (
 	"io"
 	"net"
 	"syscall"
+
+	"github.com/otfabric/go-tpkt"
 )
 
 // Minimal Class 0 DT overhead: LI (1) + type (1) + TPDU-NR/EOT (1).
@@ -24,10 +26,25 @@ const minNegotiatedTPDULength = minimalDTOverhead + 1
 // Concurrent writers are serialized for the entire segmented transfer, so
 // segments of different TSDUs never interleave; a writer waiting its turn
 // returns ctx.Err() if ctx ends first. ctx bounds only the write direction
-// (SetWriteDeadline); a concurrent ReadTSDU is unaffected. If ctx ends the
-// write before any octet of the TSDU reached the stream, WriteTSDU returns
-// ctx.Err() and the connection stays open; once octets have moved, the stream
-// may hold a partial TSDU and the connection is aborted.
+// (SetWriteDeadline); a concurrent ReadTSDU is unaffected.
+//
+// When ctx ends the write (its deadline passes, or it is cancelled, which
+// go-cotp applies as a past write deadline):
+//   - before WriteTSDU wrote to the stream (while it waits its turn, or when
+//     ctx has already ended), it returns ctx.Err() and the connection stays
+//     open, over any stream;
+//   - over a *tls.Conn passed to Connect or Accept, once WriteTSDU has
+//     written to the stream, the connection is aborted and the error matches
+//     ErrClosed and the context error, also when no octet of the TSDU was
+//     accepted: crypto/tls fails every write after one that timed out, so
+//     the stream cannot write again;
+//   - over any other stream (TCP, for example), when the stream accepted no
+//     octet of the TSDU, WriteTSDU returns ctx.Err() and the connection stays
+//     open; once octets have moved, the stream may hold a partial TSDU and the
+//     connection is aborted (ErrClosed and the context error).
+//
+// After an abort, every later call returns the same terminal error and Close
+// returns it too; the stream is closed by the abort.
 func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error {
 	if c == nil {
 		return fmt.Errorf("%w", ErrNilReceiver)
@@ -77,6 +94,11 @@ func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error {
 		if err := c.writer.WritePacket(payload); err != nil {
 			if n, ok := c.writeProgress(); tracked && ok && n == start {
 				if cerr := c.idleTimeout(ctx, err); cerr != nil {
+					if c.writeTimeoutTerminal {
+						// crypto/tls has failed the stream for every later
+						// write, whatever was counted: end the connection.
+						return c.abort(fmt.Errorf("%w: %w", ErrClosed, cerr))
+					}
 					return cerr
 				}
 			}
@@ -253,10 +275,19 @@ func (c *Conn) requireOpen() error {
 // connection is still at a packet boundary and stays open. It returns nil
 // when err must be classified (and the connection aborted) as usual.
 func (c *Conn) idleTimeout(ctx context.Context, err error) error {
-	if c.terminalKind() != terminalNone || !isTimeout(err) {
+	if c.terminalKind() != terminalNone || misaligned(err) || !isTimeout(err) {
 		return nil
 	}
 	return ctxDoneErr(ctx)
+}
+
+// misaligned reports whether err is go-tpkt's refusal to go on after an
+// earlier call failed inside a TPKT packet (tpkt.ErrStreamMisaligned). The
+// error wraps that earlier failure, which may be a deadline, but the stream
+// is no longer on a packet boundary: it is never an idle timeout, and the
+// connection cannot be used again.
+func misaligned(err error) bool {
+	return errors.Is(err, tpkt.ErrStreamMisaligned)
 }
 
 func (c *Conn) classifyIO(ctx context.Context, err error) error {
@@ -271,6 +302,14 @@ func (c *Conn) classifyIOPhase(ctx context.Context, err error, midTSDU bool) err
 	}
 	if c.terminalKind() != terminalNone {
 		return c.terminalError()
+	}
+	// go-cotp aborts at the first failure inside a packet, so the TPKT
+	// reader or writer does not reach its failed state on an open
+	// connection. Should it, the stream is unusable: end the connection,
+	// and do not take the earlier failure it wraps (a deadline, perhaps)
+	// for the end of this call's context.
+	if misaligned(err) {
+		return c.abort(fmt.Errorf("%w: %w", ErrClosed, err))
 	}
 	// A connection timeout reported by the kernel is the stream going away,
 	// whatever state ctx is in: it is classified below, with peerGone.
