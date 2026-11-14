@@ -453,11 +453,15 @@ func TestAdversarial_EOFMidTSDU(t *testing.T) {
 
 func TestAdversarial_OversizedTPDU(t *testing.T) {
 	srv, peer := acceptWithRawClient(t, cotp.ServerConfig{MaxTPDULength: 128}, &cotp.CR{TPDUSize: new(uint8(0x07))})
+	tpdu := mustMarshalTPDU(t, &cotp.DT{
+		EOT:      true,
+		UserData: bytes.Repeat([]byte{9}, 126), // 3+126 = 129 > 128
+	})
 	go func() {
-		writePeerTPDU(t, peer, mustMarshalTPDU(t, &cotp.DT{
-			EOT:      true,
-			UserData: bytes.Repeat([]byte{9}, 126), // 3+126 = 129 > 128
-		}))
+		// The server refuses the packet from its header and stops reading,
+		// so the rest of this write may fail.
+		w, _ := tpkt.NewWriter(peer)
+		_ = w.WritePacket(tpdu)
 	}()
 	_, err := srv.ReadTSDU(context.Background())
 	if !errors.Is(err, cotp.ErrHandshake) {

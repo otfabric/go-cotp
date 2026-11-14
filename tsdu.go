@@ -125,7 +125,8 @@ func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error {
 // their size and number. Its capacity never exceeds MaxTSDULength; while it
 // grows, and when the result is handed over, the old and the new buffer exist
 // together, so a call holds less than twice MaxTSDULength, plus the TPKT
-// packet being read (at most 65535 octets). A partly received TSDU is held
+// packet being read (at most the negotiated MaxTPDULength plus the 4-octet
+// TPKT header). A partly received TSDU is held
 // until the call returns: until the final segment arrives, ctx ends, the
 // stream fails or the connection is closed. A read loop without a deadline
 // keeps it for as long as the peer leaves the TSDU unfinished.

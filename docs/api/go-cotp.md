@@ -565,7 +565,7 @@ ReadTSDU receives one complete TSDU by reassembling minimal Class 0 DT segments 
 
 One reader at a time reassembles a TSDU; a concurrent caller waits its turn and returns ctx.Err() if ctx ends first. ctx bounds only the read direction (SetReadDeadline); a concurrent WriteTSDU is unaffected. If ctx ends the read before any octet of the TSDU arrived, ReadTSDU returns ctx.Err() and the connection stays open; once octets have been consumed, the connection is aborted.
 
-Memory: the segments received so far are held in one buffer, whatever their size and number. Its capacity never exceeds MaxTSDULength; while it grows, and when the result is handed over, the old and the new buffer exist together, so a call holds less than twice MaxTSDULength, plus the TPKT packet being read (at most 65535 octets). A partly received TSDU is held until the call returns: until the final segment arrives, ctx ends, the stream fails or the connection is closed. A read loop without a deadline keeps it for as long as the peer leaves the TSDU unfinished.
+Memory: the segments received so far are held in one buffer, whatever their size and number. Its capacity never exceeds MaxTSDULength; while it grows, and when the result is handed over, the old and the new buffer exist together, so a call holds less than twice MaxTSDULength, plus the TPKT packet being read (at most the negotiated MaxTPDULength plus the 4-octet TPKT header). A partly received TSDU is held until the call returns: until the final segment arrives, ctx ends, the stream fails or the connection is closed. A read loop without a deadline keeps it for as long as the peer leaves the TSDU unfinished.
 
 #### func (Conn) RemoteAddr
 

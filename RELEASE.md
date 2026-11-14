@@ -1,5 +1,22 @@
 # go-cotp Releases
 
+## v1.4.1
+
+**Date:** 2026-11-14
+**Previous release:** v1.4.0
+
+No exported identifier is added, removed or changed.
+
+### Changed
+
+- On an open connection, a TPKT packet longer than the negotiated `MaxTPDULength` plus the 4-octet TPKT header is refused from its header, before its payload is read or allocated. Before, go-cotp read and allocated the whole packet (up to 65535 octets) and then refused the TPDU. The error is the same: it matches `ErrHandshake`, and now also `tpkt.ErrPacketTooLarge`. The handshake still accepts packets up to 65535 octets. One `ReadTSDU` call now holds less than twice `MaxTSDULength` plus one packet of the negotiated size.
+
+### Dependencies
+
+- go-tpkt v1.2.1.
+
+---
+
 ## v1.4.0
 
 **Date:** 2026-11-14
