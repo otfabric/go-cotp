@@ -87,10 +87,7 @@ func (c *Conn) WriteTSDU(ctx context.Context, tsdu []byte) error {
 		end := min(offset+maxSeg, len(tsdu))
 		chunk := tsdu[offset:end]
 		eot := end == len(tsdu)
-		payload, err := (&DT{EOT: eot, UserData: chunk}).MarshalBinary()
-		if err != nil {
-			return c.abort(err)
-		}
+		payload := c.appendMinimalDT(chunk, eot)
 		if err := c.writer.WritePacket(payload); err != nil {
 			if n, ok := c.writeProgress(); tracked && ok && n == start {
 				if cerr := c.idleTimeout(ctx, err); cerr != nil {
@@ -198,12 +195,50 @@ func (c *Conn) ReadTSDU(ctx context.Context) ([]byte, error) {
 			return nil, c.abortOpen(mid, fmt.Errorf("reassembly length %d > %d: %w", len(buf)+len(seg), maxTSDU, ErrTSDUTooLarge))
 		}
 
+		if !mid && dt.EOT {
+			// A TSDU of one segment: seg is the user data of the payload
+			// go-tpkt allocated for this packet alone, its capacity ends
+			// at its length, and nothing else refers to it, so it is the
+			// caller's without a copy.
+			return seg, nil
+		}
 		buf = appendSegment(buf, seg, maxTSDU)
 		if dt.EOT {
 			break
 		}
 	}
 	return ownedTSDU(buf), nil
+}
+
+// segBufKeepLength is the largest DT segment, in octets, whose buffer a Conn
+// keeps for the next one: the TPKT payload that go-tpkt's Writer encodes
+// without an allocation.
+const segBufKeepLength = 8192
+
+// appendMinimalDT builds the minimal Class 0 DT that carries chunk (LI=2,
+// DT code, EOT and TPDU-NR 0), as (&DT{EOT: eot, UserData: chunk}).MarshalBinary
+// does. A segment of at most segBufKeepLength octets is built in c.segBuf
+// and is valid until the next call; a larger one gets its own buffer, which
+// is not kept. The caller holds writeMu and has bounded len(chunk) by the
+// negotiated TPDU size.
+func (c *Conn) appendMinimalDT(chunk []byte, eot bool) []byte {
+	nr := byte(0)
+	if eot {
+		nr = 0x80
+	}
+	need := minimalDTOverhead + len(chunk)
+	var seg []byte
+	switch {
+	case need <= cap(c.segBuf):
+		seg = c.segBuf[:0]
+	case need <= segBufKeepLength:
+		c.segBuf = make([]byte, 0, need)
+		seg = c.segBuf
+	default:
+		seg = make([]byte, 0, need)
+	}
+	seg = append(seg, 2, 0xF0, nr)
+	return append(seg, chunk...)
 }
 
 // appendSegment appends seg to the reassembly buffer buf. The buffer grows by
