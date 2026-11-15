@@ -1,5 +1,24 @@
 # go-cotp Releases
 
+## v1.4.2
+
+**Date:** 2026-11-15
+**Previous release:** v1.4.1
+
+No exported identifier is added, removed or changed. What goes on the wire is unchanged.
+
+### Changed
+
+- **`WriteTSDU` builds each DT segment in a buffer the `Conn` keeps.** A segment of at most 8192 octets no longer allocates after the first one; a larger segment gets its own buffer, which is not kept, so a `Conn` keeps at most 8192 octets for writing.
+- **`ReadTSDU` returns a TSDU of one segment without copying it.** The result is the user data of the TPKT payload that go-tpkt allocated for that packet alone; it ends at its length, as before, and later reads do not change it. A TSDU of several segments is reassembled as before.
+- Together with go-tpkt v1.2.2, a one-segment request and response in the go-cotp transport benchmark take 14 allocations instead of 22.
+
+### Dependencies
+
+- go-tpkt v1.2.2: `WritePacket` reuses its packet buffer up to 8196 octets and `ReadPacket` allocates once per packet.
+
+---
+
 ## v1.4.1
 
 **Date:** 2026-11-14

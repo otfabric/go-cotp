@@ -50,6 +50,11 @@ type Conn struct {
 	readMu  opLock
 	writeMu opLock
 
+	// segBuf holds the DT segment being written, so WriteTSDU builds each
+	// segment of at most segBufKeepLength octets without an allocation.
+	// Guarded by writeMu. Its capacity never exceeds segBufKeepLength.
+	segBuf []byte
+
 	// readDeadline and writeDeadline apply a TSDU operation's context to
 	// its own direction only.
 	readDeadline  *directionDeadline

@@ -484,6 +484,10 @@ type Conn struct {
 	// segments of different TSDUs never interleave. They are channel locks
 	// so that a caller queued behind a long transfer still honours its ctx.
 
+	// segBuf holds the DT segment being written, so WriteTSDU builds each
+	// segment of at most segBufKeepLength octets without an allocation.
+	// Guarded by writeMu. Its capacity never exceeds segBufKeepLength.
+
 	// readDeadline and writeDeadline apply a TSDU operation's context to
 	// its own direction only.
 
